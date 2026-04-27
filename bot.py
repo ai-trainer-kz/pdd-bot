@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import random
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types
@@ -70,16 +71,52 @@ def get_main_kb(lang):
         kb.add("💰 Купить")
     return kb
 
-answers_kb = ReplyKeyboardMarkup(resize_keyboard=True)
-answers_kb.add("A", "B", "C", "D")
-answers_kb.add("🔙 Назад")
+# ✅ НОВОЕ: универсальная кнопка назад
+def get_back_kb(lang):
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    if lang == "kz":
+        kb.add("⬅️ Артқа")
+    else:
+        kb.add("⬅️ Назад")
+    return kb
 
-back_kb = ReplyKeyboardMarkup(resize_keyboard=True)
-back_kb.add("🔙 Назад")
+# ✅ НОВОЕ: ответы с языком
+def get_answers_kb(lang):
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("A", "B", "C", "D")
+
+    if lang == "kz":
+        kb.add("⬅️ Артқа")
+    else:
+        kb.add("⬅️ Назад")
+
+    return kb
 
 pay_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="✅ Я оплатил / Төледім", callback_data="paid")]
 ])
+
+# ====== LOCAL QUESTIONS (БАЗА) ======
+questions_db = [
+    {
+        "q_ru": "Какой знак запрещает движение?",
+        "q_kz": "Қай белгі қозғалысқа тыйым салады?",
+        "img": "images/znak1.jpg",
+        "options": ["A", "B", "C", "D"],
+        "correct": "C",
+        "ex_ru": "Знак 'Движение запрещено' полностью запрещает движение.",
+        "ex_kz": "Бұл белгі қозғалысқа толық тыйым салады."
+    },
+    {
+        "q_ru": "Кто имеет преимущество?",
+        "q_kz": "Кімнің артықшылығы бар?",
+        "img": "images/znak2.jpg",
+        "options": ["A", "B", "C", "D"],
+        "correct": "A",
+        "ex_ru": "Преимущество у водителя на главной дороге.",
+        "ex_kz": "Басты жолдағы жүргізушінің артықшылығы бар."
+    }
+]
 
 # ====== START ======
 @dp.message_handler(commands=["start"])
@@ -113,8 +150,8 @@ async def set_lang(msg: types.Message):
 
     await msg.answer(text, reply_markup=get_main_kb(users[uid]["lang"]))
 
-# ====== BACK ======
-@dp.message_handler(lambda msg: msg.text == "🔙 Назад")
+# ====== BACK (FIXED) ======
+@dp.message_handler(lambda msg: msg.text in ["⬅️ Назад", "⬅️ Артқа"])
 async def back(msg: types.Message):
     uid = str(msg.from_user.id)
     lang = users[uid]["lang"]
@@ -151,7 +188,7 @@ async def test(msg: types.Message):
     save_users()
     await send_question(msg)
 
-# ====== LEARNING MODE ======
+# ====== LEARNING MODE (УЛУЧШЕН) ======
 @dp.message_handler(lambda msg: "Обучение" in msg.text or "Оқу" in msg.text)
 async def learning(msg: types.Message):
     uid = str(msg.from_user.id)
@@ -161,16 +198,16 @@ async def learning(msg: types.Message):
     save_users()
 
     if lang == "kz":
-        prompt = "Қазақстан ПДД негіздерін қарапайым тілмен түсіндір"
+        prompt = "Қазақстан ПДД толық әрі қарапайым тілмен түсіндір, мысалдармен"
     else:
-        prompt = "Объясни ПДД Казахстана простым языком"
+        prompt = "Объясни ПДД Казахстана простым языком с примерами"
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
     )
 
-    await msg.answer(response.choices[0].message.content, reply_markup=back_kb)
+    await msg.answer(response.choices[0].message.content, reply_markup=get_back_kb(lang))
 
 # ====== QUESTION ======
 async def send_question(msg):
@@ -183,17 +220,8 @@ async def send_question(msg):
         await msg.answer(text)
         return
 
-    if lang == "kz":
-        prompt = "Қазақстан ПДД бойынша 1 тест сұрағын бер (A B C D)"
-    else:
-        prompt = "Дай 1 тестовый вопрос по ПДД Казахстана (A B C D)"
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    q = response.choices[0].message.content
+    # ✅ Берем из базы
+    q = random.choice(questions_db)
 
     user["last_question"] = q
 
@@ -202,7 +230,16 @@ async def send_question(msg):
 
     save_users()
 
-    await msg.answer(q, reply_markup=answers_kb)
+    text = q["q_kz"] if lang == "kz" else q["q_ru"]
+
+    try:
+        await msg.answer_photo(
+            photo=open(q["img"], "rb"),
+            caption=text,
+            reply_markup=get_answers_kb(lang)
+        )
+    except:
+        await msg.answer(text, reply_markup=get_answers_kb(lang))
 
 # ====== ANSWER ======
 @dp.message_handler(lambda msg: msg.text in ["A", "B", "C", "D"])
@@ -214,18 +251,17 @@ async def answer(msg: types.Message):
         return
 
     lang = user["lang"]
+    q = user["last_question"]
 
-    if lang == "kz":
-        prompt = f"{user['last_question']}\nЖауап: {msg.text}\nДұрыс па және қысқаша түсіндір"
+    correct = q["correct"]
+    explanation = q["ex_kz"] if lang == "kz" else q["ex_ru"]
+
+    if msg.text == correct:
+        text = "✅ Дұрыс!\n\n" + explanation if lang == "kz" else "✅ Правильно!\n\n" + explanation
     else:
-        prompt = f"{user['last_question']}\nОтвет: {msg.text}\nПравильно или нет и объясни кратко"
+        text = f"❌ Қате. Дұрыс жауап: {correct}\n\n{explanation}" if lang == "kz" else f"❌ Неправильно. Ответ: {correct}\n\n{explanation}"
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    await msg.answer(response.choices[0].message.content)
+    await msg.answer(text)
 
     await send_question(msg)
 
