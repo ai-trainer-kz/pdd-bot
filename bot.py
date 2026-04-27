@@ -2,6 +2,7 @@ import os
 import logging
 import json
 import random
+import asyncio
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types
@@ -36,26 +37,6 @@ def save_users():
         json.dump(users, f, ensure_ascii=False, indent=2)
 
 users = load_users()
-FREE_LIMIT = 5
-
-# ====== PREMIUM ======
-def is_premium(user_id):
-    user = users.get(user_id)
-    if not user or not user.get("premium"):
-        return False
-
-    expires = user.get("expires")
-    if not expires:
-        return False
-
-    expires_date = datetime.strptime(expires, "%Y-%m-%d")
-
-    if datetime.now() > expires_date:
-        user["premium"] = False
-        save_users()
-        return False
-
-    return True
 
 # ====== KEYBOARDS ======
 lang_kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -65,12 +46,10 @@ def get_main_kb(lang):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     if lang == "kz":
         kb.add("🚗 Тест ПДД", "📚 Оқу", "🧠 Емтихан")
-        kb.add("📊 Статистика", "💰 Сатып алу")
-        kb.add("⬅️ Артқа")
+        kb.add("📊 Статистика")
     else:
         kb.add("🚗 Тест ПДД", "📚 Обучение", "🧠 Экзамен")
-        kb.add("📊 Статистика", "💰 Купить")
-        kb.add("⬅️ Назад")
+        kb.add("📊 Статистика")
     return kb
 
 def get_back_kb(lang):
@@ -83,10 +62,6 @@ def get_answers_kb(lang):
     kb.add("A", "B", "C", "D")
     kb.add("⬅️ Артқа" if lang == "kz" else "⬅️ Назад")
     return kb
-
-pay_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="✅ Я оплатил / Төледім", callback_data="paid")]
-])
 
 # ====== QUESTIONS ======
 questions_db = [
@@ -106,9 +81,7 @@ questions_db = [
             "B) Тұраққа тыйым",
             "C) Қозғалысқа тыйым",
             "D) Жылдамдық шектеуі"
-        ],
-        "ex_ru": "Этот знак полностью запрещает движение.",
-        "ex_kz": "Бұл белгі қозғалысқа толық тыйым салады."
+        ]
     }
 ]
 
@@ -118,9 +91,6 @@ async def start(msg: types.Message):
     uid = str(msg.from_user.id)
 
     users[uid] = users.get(uid, {
-        "free_used": 0,
-        "premium": False,
-        "expires": None,
         "lang": None,
         "mode": None,
         "stats": {"correct": 0, "wrong": 0},
@@ -138,8 +108,8 @@ async def set_lang(msg: types.Message):
     users[uid]["lang"] = "ru" if "Русский" in msg.text else "kz"
     save_users()
 
-    text = "Выбери режим 👇" if users[uid]["lang"] == "ru" else "Таңдаңыз 👇"
-    await msg.answer(text, reply_markup=get_main_kb(users[uid]["lang"]))
+    await msg.answer("Выбери режим 👇" if users[uid]["lang"] == "ru" else "Таңдаңыз 👇",
+                     reply_markup=get_main_kb(users[uid]["lang"]))
 
 # ====== BACK ======
 @dp.message_handler(lambda msg: msg.text in ["⬅️ Назад", "⬅️ Артқа"])
@@ -153,23 +123,11 @@ async def back(msg: types.Message):
     await msg.answer("Главное меню" if lang == "ru" else "Басты мәзір",
                      reply_markup=get_main_kb(lang))
 
-# ====== STATISTICS ======
-@dp.message_handler(lambda msg: "Статистика" in msg.text)
-async def stats(msg: types.Message):
-    uid = str(msg.from_user.id)
-    user = users[uid]
-    lang = user["lang"]
-
-    c = user["stats"]["correct"]
-    w = user["stats"]["wrong"]
-    total = c + w
-
-    if lang == "kz":
-        text = f"📊 Статистика:\nДұрыс: {c}\nҚате: {w}\nБарлығы: {total}"
-    else:
-        text = f"📊 Статистика:\nПравильно: {c}\nОшибок: {w}\nВсего: {total}"
-
-    await msg.answer(text, reply_markup=get_back_kb(lang))
+# ====== TYPING LOOP ======
+async def typing_loop(chat_id):
+    while True:
+        await bot.send_chat_action(chat_id, "typing")
+        await asyncio.sleep(2)
 
 # ====== TEST ======
 @dp.message_handler(lambda msg: "Тест ПДД" in msg.text)
@@ -194,13 +152,61 @@ async def exam(msg: types.Message):
 
     await send_question(msg)
 
+# ====== ОБУЧЕНИЕ ======
+@dp.message_handler(lambda msg: "Обучение" in msg.text or "Оқу" in msg.text)
+async def learning(msg: types.Message):
+    uid = str(msg.from_user.id)
+    lang = users[uid]["lang"]
+
+    users[uid]["mode"] = "learn"
+    save_users()
+
+    await msg.answer("Напиши вопрос по ПДД 👇" if lang == "ru"
+                     else "Сұрақ жазыңыз 👇",
+                     reply_markup=get_back_kb(lang))
+
+# ====== AI ======
+@dp.message_handler(lambda msg: True)
+async def ai_handler(msg: types.Message):
+    uid = str(msg.from_user.id)
+    user = users.get(uid)
+
+    if not user or user.get("mode") != "learn":
+        return
+
+    lang = user["lang"]
+
+    task = asyncio.create_task(typing_loop(msg.chat.id))
+
+    try:
+        system = "Ты инструктор ПДД Казахстана. Объясняй просто."
+
+        if lang == "kz":
+            system = "Сен ПДД инструкторсың. Қарапайым түсіндір."
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": msg.text}
+            ]
+        )
+
+        answer = response.choices[0].message.content
+
+        await msg.answer(answer, reply_markup=get_back_kb(lang))
+
+    except Exception as e:
+        await msg.answer(f"Ошибка: {e}")
+
+    finally:
+        task.cancel()
+
 # ====== QUESTION ======
 async def send_question(msg):
     uid = str(msg.from_user.id)
     user = users[uid]
     lang = user["lang"]
-
-    await bot.send_chat_action(msg.chat.id, "typing")
 
     q = random.choice(questions_db)
     user["last_question"] = q
@@ -215,14 +221,7 @@ async def send_question(msg):
 
     text = f"{question}\n\n" + "\n".join(options)
 
-    try:
-        await msg.answer_photo(
-            photo=open(q["img"], "rb"),
-            caption=text,
-            reply_markup=get_answers_kb(lang)
-        )
-    except:
-        await msg.answer(text, reply_markup=get_answers_kb(lang))
+    await msg.answer(text, reply_markup=get_answers_kb(lang))
 
 # ====== ANSWER ======
 @dp.message_handler(lambda msg: msg.text in ["A", "B", "C", "D"])
@@ -230,8 +229,6 @@ async def answer(msg: types.Message):
     uid = str(msg.from_user.id)
     user = users[uid]
     lang = user["lang"]
-
-    await bot.send_chat_action(msg.chat.id, "typing")
 
     q = user["last_question"]
     correct = q["correct"]
@@ -248,7 +245,6 @@ async def answer(msg: types.Message):
 
     await msg.answer(text)
 
-    # ===== экзамен логика =====
     if user["mode"] == "exam":
         if user["exam"]["errors"] >= 3:
             await msg.answer("❌ Провал" if lang == "ru" else "❌ Құладың")
