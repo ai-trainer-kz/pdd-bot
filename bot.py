@@ -1,13 +1,16 @@
 import os
 import logging
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 
 from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -19,6 +22,7 @@ dp = Dispatcher(bot)
 
 DATA_FILE = "users.json"
 
+# ====== DATA ======
 def load_users():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -33,6 +37,7 @@ def save_users():
 users = load_users()
 FREE_LIMIT = 5
 
+# ====== PREMIUM ======
 def is_premium(user_id):
     user = users.get(user_id)
     if not user or not user.get("premium"):
@@ -51,20 +56,29 @@ def is_premium(user_id):
 
     return True
 
-# ===== КНОПКИ =====
-main_kb = ReplyKeyboardMarkup(resize_keyboard=True)
-main_kb.add("🚗 Тест ПДД", "📚 Обучение")
-main_kb.add("💰 Купить")
+# ====== KEYBOARDS ======
+lang_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+lang_kb.add("🇷🇺 Русский", "🇰🇿 Қазақша")
+
+def get_main_kb(lang):
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    if lang == "kz":
+        kb.add("🚗 Тест ПДД", "📚 Оқу")
+        kb.add("💰 Сатып алу")
+    else:
+        kb.add("🚗 Тест ПДД", "📚 Обучение")
+        kb.add("💰 Купить")
+    return kb
 
 answers_kb = ReplyKeyboardMarkup(resize_keyboard=True)
 answers_kb.add("A", "B", "C", "D")
 answers_kb.add("🛑 Стоп")
 
 pay_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")]
+    [InlineKeyboardButton(text="✅ Я оплатил / Төледім", callback_data="paid")]
 ])
 
-# ===== START =====
+# ====== START ======
 @dp.message_handler(commands=["start"])
 async def start(msg: types.Message):
     uid = str(msg.from_user.id)
@@ -72,51 +86,92 @@ async def start(msg: types.Message):
     users[uid] = users.get(uid, {
         "free_used": 0,
         "premium": False,
-        "expires": None
+        "expires": None,
+        "lang": None
     })
     save_users()
 
-    await msg.answer(
-        "🚗 Привет! Я AI-тренер по ПДД KZ\n\nВыбери режим 👇",
-        reply_markup=main_kb
-    )
+    await msg.answer("Выбери язык / Тілді таңда:", reply_markup=lang_kb)
 
-# ===== КУПИТЬ =====
-@dp.message_handler(lambda msg: msg.text == "💰 Купить")
+# ====== LANGUAGE ======
+@dp.message_handler(lambda msg: msg.text in ["🇷🇺 Русский", "🇰🇿 Қазақша"])
+async def set_lang(msg: types.Message):
+    uid = str(msg.from_user.id)
+
+    if "Русский" in msg.text:
+        users[uid]["lang"] = "ru"
+        text = "🚗 Привет! Я AI-тренер по ПДД KZ\n\nВыбери режим 👇"
+    else:
+        users[uid]["lang"] = "kz"
+        text = "🚗 Сәлем! Мен ПДД бойынша AI жаттықтырушы\n\nТаңдаңыз 👇"
+
+    save_users()
+
+    await msg.answer(text, reply_markup=get_main_kb(users[uid]["lang"]))
+
+# ====== BUY ======
+@dp.message_handler(lambda msg: msg.text in ["💰 Купить", "💰 Сатып алу"])
 async def buy(msg: types.Message):
-    await msg.answer(
-        "Полный доступ:\n7 дней — 5000 тг\n30 дней — 10000 тг\n\nПосле оплаты нажми кнопку ниже 👇",
-        reply_markup=pay_kb
-    )
+    uid = str(msg.from_user.id)
+    lang = users[uid]["lang"]
+
+    if lang == "kz":
+        text = "Толық қолжетімділік:\n7 күн — 5000 тг\n30 күн — 10000 тг"
+    else:
+        text = "Полный доступ:\n7 дней — 5000 тг\n30 дней — 10000 тг"
+
+    await msg.answer(text, reply_markup=pay_kb)
 
 @dp.callback_query_handler(lambda c: c.data == "paid")
 async def paid(callback: types.CallbackQuery):
-    await callback.message.answer("Отправь чек администратору")
+    await callback.message.answer("Отправь чек администратору / Чекті админге жібер")
     await callback.answer()
 
-# ===== ТЕСТ =====
-@dp.message_handler(lambda msg: msg.text == "🚗 Тест ПДД")
+# ====== TEST ======
+@dp.message_handler(lambda msg: "Тест ПДД" in msg.text)
 async def test(msg: types.Message):
     await send_question(msg)
 
-# ===== СТОП =====
+# ====== STOP ======
 @dp.message_handler(lambda msg: msg.text == "🛑 Стоп")
 async def stop(msg: types.Message):
-    await msg.answer("Тест остановлен", reply_markup=main_kb)
+    uid = str(msg.from_user.id)
+    lang = users[uid]["lang"]
 
-# ===== ВОПРОС =====
+    text = "Тест остановлен" if lang == "ru" else "Тест тоқтатылды"
+
+    await msg.answer(text, reply_markup=get_main_kb(lang))
+
+# ====== QUESTION ======
 async def send_question(msg):
     uid = str(msg.from_user.id)
     user = users[uid]
+    lang = user["lang"]
 
     if not is_premium(uid) and user["free_used"] >= FREE_LIMIT:
-        await msg.answer("Лимит закончился. Купи доступ")
+        text = "Лимит закончился. Купи доступ" if lang == "ru" else "Лимит бітті. Сатып ал"
+        await msg.answer(text)
         return
 
-    prompt = """
+    if lang == "kz":
+        prompt = """
+Сен — Қазақстан ПДД емтиханшысы.
+
+1 сұрақ қой.
+Формат:
+Сұрақ
+A)
+B)
+C)
+D)
+
+Жауапты жазба
+"""
+    else:
+        prompt = """
 Ты — экзаменатор ПДД Казахстана.
 
-Задай 1 вопрос как на экзамене.
+Задай 1 вопрос.
 Формат:
 Вопрос
 A)
@@ -143,22 +198,34 @@ D)
 
     await msg.answer(q, reply_markup=answers_kb)
 
-# ===== ОТВЕТ =====
+# ====== ANSWER ======
 @dp.message_handler(lambda msg: msg.text in ["A", "B", "C", "D"])
 async def answer(msg: types.Message):
     uid = str(msg.from_user.id)
     user = users.get(uid)
 
-    if "last_question" not in user:
+    if not user or "last_question" not in user:
         return
 
-    prompt = f"""
+    lang = user["lang"]
+
+    if lang == "kz":
+        prompt = f"""
+Сұрақ:
+{user['last_question']}
+
+Пайдаланушы жауабы: {msg.text}
+
+1. Дұрыс па
+2. Қысқа түсіндіру
+"""
+    else:
+        prompt = f"""
 Вопрос:
 {user['last_question']}
 
 Ответ пользователя: {msg.text}
 
-Скажи:
 1. Правильно или нет
 2. Короткое объяснение
 """
@@ -174,6 +241,6 @@ async def answer(msg: types.Message):
 
     await send_question(msg)
 
-# ===== ЗАПУСК =====
+# ====== RUN ======
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
