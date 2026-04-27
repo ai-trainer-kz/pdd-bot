@@ -59,7 +59,7 @@ def get_answers_kb(lang):
     kb.add("⬅️ Артқа" if lang == "kz" else "⬅️ Назад")
     return kb
 
-# ===== QUESTIONS =====
+# ===== QUESTIONS (расширено) =====
 questions_db = [
     {
         "q_ru": "Какой знак запрещает движение?",
@@ -77,6 +77,8 @@ questions_db = [
             "C) Қозғалысқа тыйым",
             "D) Жылдамдық шектеуі"
         ],
+        "ex_ru": "Этот знак полностью запрещает движение.",
+        "ex_kz": "Бұл белгі қозғалысқа толық тыйым салады."
     },
     {
         "q_ru": "Кто имеет преимущество?",
@@ -94,6 +96,8 @@ questions_db = [
             "C) Жаяу жүргінші",
             "D) Ешкім"
         ],
+        "ex_ru": "Главная дорога имеет преимущество.",
+        "ex_kz": "Басты жолдың артықшылығы бар."
     }
 ]
 
@@ -134,6 +138,27 @@ async def back(msg: types.Message):
     await msg.answer("Главное меню" if lang == "ru" else "Басты мәзір",
                      reply_markup=get_main_kb(lang))
 
+# ===== AI ОБУЧЕНИЕ =====
+@dp.message_handler(lambda msg: "Обучение" in msg.text or "Оқу" in msg.text)
+async def ai_training(msg: types.Message):
+    uid = str(msg.from_user.id)
+    lang = users[uid]["lang"]
+
+    await bot.send_chat_action(msg.chat.id, "typing")
+
+    try:
+        prompt = "Объясни ПДД простыми словами" if lang == "ru" else "Жол ережесін қарапайым түсіндір"
+
+        res = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        await msg.answer(res.choices[0].message.content)
+
+    except:
+        await msg.answer("Ошибка AI")
+
 # ===== TEST =====
 @dp.message_handler(lambda msg: "Тест ПДД" in msg.text)
 async def test(msg: types.Message):
@@ -152,31 +177,10 @@ async def exam(msg: types.Message):
     users[uid]["exam"] = {"q": 0, "errors": 0}
     save_users()
 
-    await msg.answer("Экзамен: 20 вопросов, 3 ошибки = провал" if lang == "ru"
-                     else "Емтихан: 20 сұрақ, 3 қате = құлау")
+    await msg.answer("20 вопросов, 3 ошибки = провал" if lang == "ru"
+                     else "20 сұрақ, 3 қате = құлау")
 
     await send_question(msg)
-
-# ===== AI TRAINER =====
-@dp.message_handler(lambda msg: "Обучение" in msg.text or "Оқу" in msg.text)
-async def ai_train(msg: types.Message):
-    uid = str(msg.from_user.id)
-    lang = users[uid]["lang"]
-
-    await bot.send_chat_action(msg.chat.id, "typing")
-
-    prompt = "Объясни ПДД простыми словами" if lang == "ru" else "Жол ережесін қарапайым түсіндір"
-
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        text = res.choices[0].message.content
-    except:
-        text = "Ошибка AI"
-
-    await msg.answer(text)
 
 # ===== QUESTION =====
 async def send_question(msg):
@@ -215,7 +219,7 @@ async def answer(msg: types.Message):
 
     if msg.text == correct:
         user["stats"]["correct"] += 1
-        text = "✅ Правильно!" if lang == "ru" else "✅ Дұрыс!"
+        text = "✅ Дұрыс!" if lang == "kz" else "✅ Правильно!"
     else:
         user["stats"]["wrong"] += 1
         text = f"❌ Ответ: {correct}" if lang == "ru" else f"❌ Дұрыс жауап: {correct}"
@@ -223,9 +227,11 @@ async def answer(msg: types.Message):
         if user["mode"] == "exam":
             user["exam"]["errors"] += 1
 
-    await msg.answer(text)
+    explanation = q.get("ex_kz") if lang == "kz" else q.get("ex_ru")
 
-    # ===== EXAM LOGIC =====
+    await msg.answer(f"{text}\n\n{explanation}")
+
+    # ===== EXAM =====
     if user["mode"] == "exam":
         if user["exam"]["errors"] >= 3:
             await msg.answer("❌ Провал" if lang == "ru" else "❌ Құладың")
