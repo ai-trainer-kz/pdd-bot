@@ -72,7 +72,10 @@ def get_main_kb(lang):
 
 answers_kb = ReplyKeyboardMarkup(resize_keyboard=True)
 answers_kb.add("A", "B", "C", "D")
-answers_kb.add("🛑 Стоп")
+answers_kb.add("🔙 Назад")
+
+back_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+back_kb.add("🔙 Назад")
 
 pay_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="✅ Я оплатил / Төледім", callback_data="paid")]
@@ -87,7 +90,8 @@ async def start(msg: types.Message):
         "free_used": 0,
         "premium": False,
         "expires": None,
-        "lang": None
+        "lang": None,
+        "mode": None
     })
     save_users()
 
@@ -109,6 +113,18 @@ async def set_lang(msg: types.Message):
 
     await msg.answer(text, reply_markup=get_main_kb(users[uid]["lang"]))
 
+# ====== BACK ======
+@dp.message_handler(lambda msg: msg.text == "🔙 Назад")
+async def back(msg: types.Message):
+    uid = str(msg.from_user.id)
+    lang = users[uid]["lang"]
+
+    users[uid]["mode"] = None
+    save_users()
+
+    text = "Главное меню" if lang == "ru" else "Басты мәзір"
+    await msg.answer(text, reply_markup=get_main_kb(lang))
+
 # ====== BUY ======
 @dp.message_handler(lambda msg: msg.text in ["💰 Купить", "💰 Сатып алу"])
 async def buy(msg: types.Message):
@@ -127,20 +143,34 @@ async def paid(callback: types.CallbackQuery):
     await callback.message.answer("Отправь чек администратору / Чекті админге жібер")
     await callback.answer()
 
-# ====== TEST ======
+# ====== TEST MODE ======
 @dp.message_handler(lambda msg: "Тест ПДД" in msg.text)
 async def test(msg: types.Message):
+    uid = str(msg.from_user.id)
+    users[uid]["mode"] = "test"
+    save_users()
     await send_question(msg)
 
-# ====== STOP ======
-@dp.message_handler(lambda msg: msg.text == "🛑 Стоп")
-async def stop(msg: types.Message):
+# ====== LEARNING MODE ======
+@dp.message_handler(lambda msg: "Обучение" in msg.text or "Оқу" in msg.text)
+async def learning(msg: types.Message):
     uid = str(msg.from_user.id)
     lang = users[uid]["lang"]
 
-    text = "Тест остановлен" if lang == "ru" else "Тест тоқтатылды"
+    users[uid]["mode"] = "learn"
+    save_users()
 
-    await msg.answer(text, reply_markup=get_main_kb(lang))
+    if lang == "kz":
+        prompt = "Қазақстан ПДД негіздерін қарапайым тілмен түсіндір"
+    else:
+        prompt = "Объясни ПДД Казахстана простым языком"
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    await msg.answer(response.choices[0].message.content, reply_markup=back_kb)
 
 # ====== QUESTION ======
 async def send_question(msg):
@@ -154,33 +184,9 @@ async def send_question(msg):
         return
 
     if lang == "kz":
-        prompt = """
-Сен — Қазақстан ПДД емтиханшысы.
-
-1 сұрақ қой.
-Формат:
-Сұрақ
-A)
-B)
-C)
-D)
-
-Жауапты жазба
-"""
+        prompt = "Қазақстан ПДД бойынша 1 тест сұрағын бер (A B C D)"
     else:
-        prompt = """
-Ты — экзаменатор ПДД Казахстана.
-
-Задай 1 вопрос.
-Формат:
-Вопрос
-A)
-B)
-C)
-D)
-
-НЕ пиши ответ
-"""
+        prompt = "Дай 1 тестовый вопрос по ПДД Казахстана (A B C D)"
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -210,34 +216,16 @@ async def answer(msg: types.Message):
     lang = user["lang"]
 
     if lang == "kz":
-        prompt = f"""
-Сұрақ:
-{user['last_question']}
-
-Пайдаланушы жауабы: {msg.text}
-
-1. Дұрыс па
-2. Қысқа түсіндіру
-"""
+        prompt = f"{user['last_question']}\nЖауап: {msg.text}\nДұрыс па және қысқаша түсіндір"
     else:
-        prompt = f"""
-Вопрос:
-{user['last_question']}
-
-Ответ пользователя: {msg.text}
-
-1. Правильно или нет
-2. Короткое объяснение
-"""
+        prompt = f"{user['last_question']}\nОтвет: {msg.text}\nПравильно или нет и объясни кратко"
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
     )
 
-    res = response.choices[0].message.content
-
-    await msg.answer(res)
+    await msg.answer(response.choices[0].message.content)
 
     await send_question(msg)
 
