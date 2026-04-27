@@ -2,7 +2,6 @@ import os
 import logging
 import json
 import random
-import asyncio
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types
@@ -24,7 +23,7 @@ dp = Dispatcher(bot)
 
 DATA_FILE = "users.json"
 
-# ====== DATA ======
+# ===== DATA =====
 def load_users():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -38,7 +37,7 @@ def save_users():
 
 users = load_users()
 
-# ====== KEYBOARDS ======
+# ===== KEYBOARDS =====
 lang_kb = ReplyKeyboardMarkup(resize_keyboard=True)
 lang_kb.add("🇷🇺 Русский", "🇰🇿 Қазақша")
 
@@ -46,15 +45,12 @@ def get_main_kb(lang):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     if lang == "kz":
         kb.add("🚗 Тест ПДД", "📚 Оқу", "🧠 Емтихан")
-        kb.add("📊 Статистика")
+        kb.add("📊 Статистика", "💰 Сатып алу")
+        kb.add("⬅️ Артқа")
     else:
         kb.add("🚗 Тест ПДД", "📚 Обучение", "🧠 Экзамен")
-        kb.add("📊 Статистика")
-    return kb
-
-def get_back_kb(lang):
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("⬅️ Артқа" if lang == "kz" else "⬅️ Назад")
+        kb.add("📊 Статистика", "💰 Купить")
+        kb.add("⬅️ Назад")
     return kb
 
 def get_answers_kb(lang):
@@ -63,7 +59,7 @@ def get_answers_kb(lang):
     kb.add("⬅️ Артқа" if lang == "kz" else "⬅️ Назад")
     return kb
 
-# ====== QUESTIONS ======
+# ===== QUESTIONS =====
 questions_db = [
     {
         "q_ru": "Какой знак запрещает движение?",
@@ -80,11 +76,28 @@ questions_db = [
             "B) Тұраққа тыйым",
             "C) Қозғалысқа тыйым",
             "D) Жылдамдық шектеуі"
-        ]
+        ],
+    },
+    {
+        "q_ru": "Кто имеет преимущество?",
+        "q_kz": "Кімнің артықшылығы бар?",
+        "correct": "A",
+        "options_ru": [
+            "A) Главная дорога",
+            "B) Второстепенная",
+            "C) Пешеход",
+            "D) Никто"
+        ],
+        "options_kz": [
+            "A) Басты жол",
+            "B) Қосымша жол",
+            "C) Жаяу жүргінші",
+            "D) Ешкім"
+        ],
     }
 ]
 
-# ====== START ======
+# ===== START =====
 @dp.message_handler(commands=["start"])
 async def start(msg: types.Message):
     uid = str(msg.from_user.id)
@@ -93,15 +106,13 @@ async def start(msg: types.Message):
         "lang": None,
         "mode": None,
         "stats": {"correct": 0, "wrong": 0},
-        "exam": {"q": 0, "errors": 0},
-        "last_q": None,
-        "exam_active": False
+        "exam": {"q": 0, "errors": 0}
     })
     save_users()
 
     await msg.answer("Выбери язык / Тілді таңда:", reply_markup=lang_kb)
 
-# ====== LANGUAGE ======
+# ===== LANGUAGE =====
 @dp.message_handler(lambda msg: msg.text in ["🇷🇺 Русский", "🇰🇿 Қазақша"])
 async def set_lang(msg: types.Message):
     uid = str(msg.from_user.id)
@@ -111,26 +122,19 @@ async def set_lang(msg: types.Message):
     await msg.answer("Выбери режим 👇" if users[uid]["lang"] == "ru" else "Таңдаңыз 👇",
                      reply_markup=get_main_kb(users[uid]["lang"]))
 
-# ====== BACK ======
+# ===== BACK =====
 @dp.message_handler(lambda msg: msg.text in ["⬅️ Назад", "⬅️ Артқа"])
 async def back(msg: types.Message):
     uid = str(msg.from_user.id)
     lang = users[uid]["lang"]
 
     users[uid]["mode"] = None
-    users[uid]["exam_active"] = False
     save_users()
 
     await msg.answer("Главное меню" if lang == "ru" else "Басты мәзір",
                      reply_markup=get_main_kb(lang))
 
-# ====== TYPING LOOP ======
-async def typing_loop(chat_id):
-    while True:
-        await bot.send_chat_action(chat_id, "typing")
-        await asyncio.sleep(2)
-
-# ====== TEST ======
+# ===== TEST =====
 @dp.message_handler(lambda msg: "Тест ПДД" in msg.text)
 async def test(msg: types.Message):
     uid = str(msg.from_user.id)
@@ -138,7 +142,7 @@ async def test(msg: types.Message):
     save_users()
     await send_question(msg)
 
-# ====== EXAM ======
+# ===== EXAM =====
 @dp.message_handler(lambda msg: "Экзамен" in msg.text or "Емтихан" in msg.text)
 async def exam(msg: types.Message):
     uid = str(msg.from_user.id)
@@ -146,7 +150,6 @@ async def exam(msg: types.Message):
 
     users[uid]["mode"] = "exam"
     users[uid]["exam"] = {"q": 0, "errors": 0}
-    users[uid]["exam_active"] = True
     save_users()
 
     await msg.answer("Экзамен: 20 вопросов, 3 ошибки = провал" if lang == "ru"
@@ -154,53 +157,37 @@ async def exam(msg: types.Message):
 
     await send_question(msg)
 
-# ====== ОБУЧЕНИЕ ======
+# ===== AI TRAINER =====
 @dp.message_handler(lambda msg: "Обучение" in msg.text or "Оқу" in msg.text)
-async def learning(msg: types.Message):
+async def ai_train(msg: types.Message):
     uid = str(msg.from_user.id)
     lang = users[uid]["lang"]
 
-    users[uid]["mode"] = "learn"
-    save_users()
+    await bot.send_chat_action(msg.chat.id, "typing")
 
-    await msg.answer("Напиши вопрос 👇" if lang == "ru" else "Сұрақ жаз 👇",
-                     reply_markup=get_back_kb(lang))
-
-# ====== AI ======
-@dp.message_handler(lambda msg: True)
-async def ai_handler(msg: types.Message):
-    uid = str(msg.from_user.id)
-    user = users.get(uid)
-
-    if not user or user.get("mode") != "learn":
-        return
-
-    task = asyncio.create_task(typing_loop(msg.chat.id))
+    prompt = "Объясни ПДД простыми словами" if lang == "ru" else "Жол ережесін қарапайым түсіндір"
 
     try:
-        response = client.chat.completions.create(
+        res = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": msg.text}]
+            messages=[{"role": "user", "content": prompt}]
         )
+        text = res.choices[0].message.content
+    except:
+        text = "Ошибка AI"
 
-        await msg.answer(response.choices[0].message.content)
+    await msg.answer(text)
 
-    finally:
-        task.cancel()
-
-# ====== QUESTION ======
+# ===== QUESTION =====
 async def send_question(msg):
     uid = str(msg.from_user.id)
     user = users[uid]
     lang = user["lang"]
 
-    # ❗ защита от одинакового вопроса
-    while True:
-        q = random.choice(questions_db)
-        if q != user.get("last_q"):
-            break
+    await bot.send_chat_action(msg.chat.id, "typing")
 
-    user["last_q"] = q
+    q = random.choice(questions_db)
+    user["last_question"] = q
 
     if user["mode"] == "exam":
         user["exam"]["q"] += 1
@@ -214,46 +201,47 @@ async def send_question(msg):
 
     await msg.answer(text, reply_markup=get_answers_kb(lang))
 
-# ====== ANSWER ======
+# ===== ANSWER =====
 @dp.message_handler(lambda msg: msg.text in ["A", "B", "C", "D"])
 async def answer(msg: types.Message):
     uid = str(msg.from_user.id)
     user = users[uid]
     lang = user["lang"]
 
-    if user.get("exam_active") is False and user["mode"] == "exam":
-        return
+    await bot.send_chat_action(msg.chat.id, "typing")
 
-    q = user["last_q"]
+    q = user["last_question"]
     correct = q["correct"]
 
     if msg.text == correct:
         user["stats"]["correct"] += 1
-        text = "✅ Дұрыс!" if lang == "kz" else "✅ Правильно!"
+        text = "✅ Правильно!" if lang == "ru" else "✅ Дұрыс!"
     else:
         user["stats"]["wrong"] += 1
-        text = f"❌ {correct}"
+        text = f"❌ Ответ: {correct}" if lang == "ru" else f"❌ Дұрыс жауап: {correct}"
 
         if user["mode"] == "exam":
             user["exam"]["errors"] += 1
 
     await msg.answer(text)
 
-    # ❗ СТОП ЭКЗАМЕНА
+    # ===== EXAM LOGIC =====
     if user["mode"] == "exam":
         if user["exam"]["errors"] >= 3:
-            user["exam_active"] = False
             await msg.answer("❌ Провал" if lang == "ru" else "❌ Құладың")
+            user["mode"] = None
+            save_users()
             return
 
         if user["exam"]["q"] >= 20:
-            user["exam_active"] = False
             await msg.answer("🎉 Сдал!" if lang == "ru" else "🎉 Өттің!")
+            user["mode"] = None
+            save_users()
             return
 
     save_users()
     await send_question(msg)
 
-# ====== RUN ======
+# ===== RUN =====
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
