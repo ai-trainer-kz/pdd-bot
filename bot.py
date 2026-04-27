@@ -5,7 +5,7 @@ import random
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import ReplyKeyboardMarkup
 from aiogram.utils import executor
 
 from openai import OpenAI
@@ -59,7 +59,7 @@ def get_answers_kb(lang):
     kb.add("⬅️ Артқа" if lang == "kz" else "⬅️ Назад")
     return kb
 
-# ===== QUESTIONS (расширено) =====
+# ===== QUESTIONS =====
 questions_db = [
     {
         "q_ru": "Какой знак запрещает движение?",
@@ -79,25 +79,6 @@ questions_db = [
         ],
         "ex_ru": "Этот знак полностью запрещает движение.",
         "ex_kz": "Бұл белгі қозғалысқа толық тыйым салады."
-    },
-    {
-        "q_ru": "Кто имеет преимущество?",
-        "q_kz": "Кімнің артықшылығы бар?",
-        "correct": "A",
-        "options_ru": [
-            "A) Главная дорога",
-            "B) Второстепенная",
-            "C) Пешеход",
-            "D) Никто"
-        ],
-        "options_kz": [
-            "A) Басты жол",
-            "B) Қосымша жол",
-            "C) Жаяу жүргінші",
-            "D) Ешкім"
-        ],
-        "ex_ru": "Главная дорога имеет преимущество.",
-        "ex_kz": "Басты жолдың артықшылығы бар."
     }
 ]
 
@@ -147,13 +128,10 @@ async def ai_training(msg: types.Message):
     await bot.send_chat_action(msg.chat.id, "typing")
 
     try:
-        prompt = "Объясни ПДД простыми словами" if lang == "ru" else "Жол ережесін қарапайым түсіндір"
-
         res = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": "Объясни ПДД просто"}]
         )
-
         await msg.answer(res.choices[0].message.content)
 
     except:
@@ -177,8 +155,7 @@ async def exam(msg: types.Message):
     users[uid]["exam"] = {"q": 0, "errors": 0}
     save_users()
 
-    await msg.answer("20 вопросов, 3 ошибки = провал" if lang == "ru"
-                     else "20 сұрақ, 3 қате = құлау")
+    await msg.answer("20 вопросов / 3 ошибки = стоп")
 
     await send_question(msg)
 
@@ -198,10 +175,9 @@ async def send_question(msg):
 
     save_users()
 
-    question = q["q_kz"] if lang == "kz" else q["q_ru"]
-    options = q["options_kz"] if lang == "kz" else q["options_ru"]
-
-    text = f"{question}\n\n" + "\n".join(options)
+    text = (q["q_kz"] if lang == "kz" else q["q_ru"]) + "\n\n" + "\n".join(
+        q["options_kz"] if lang == "kz" else q["options_ru"]
+    )
 
     await msg.answer(text, reply_markup=get_answers_kb(lang))
 
@@ -215,32 +191,29 @@ async def answer(msg: types.Message):
     await bot.send_chat_action(msg.chat.id, "typing")
 
     q = user["last_question"]
-    correct = q["correct"]
 
-    if msg.text == correct:
+    if msg.text == q["correct"]:
         user["stats"]["correct"] += 1
-        text = "✅ Дұрыс!" if lang == "kz" else "✅ Правильно!"
+        await msg.answer("✅ Правильно!" if lang == "ru" else "✅ Дұрыс!")
     else:
         user["stats"]["wrong"] += 1
-        text = f"❌ Ответ: {correct}" if lang == "ru" else f"❌ Дұрыс жауап: {correct}"
+        await msg.answer(f"❌ Ответ: {q['correct']}")
 
         if user["mode"] == "exam":
             user["exam"]["errors"] += 1
 
-    explanation = q.get("ex_kz") if lang == "kz" else q.get("ex_ru")
-
-    await msg.answer(f"{text}\n\n{explanation}")
+    await msg.answer(q.get("ex_ru") if lang == "ru" else q.get("ex_kz"))
 
     # ===== EXAM =====
     if user["mode"] == "exam":
         if user["exam"]["errors"] >= 3:
-            await msg.answer("❌ Провал" if lang == "ru" else "❌ Құладың")
+            await msg.answer("❌ Провал")
             user["mode"] = None
             save_users()
             return
 
         if user["exam"]["q"] >= 20:
-            await msg.answer("🎉 Сдал!" if lang == "ru" else "🎉 Өттің!")
+            await msg.answer("🎉 Сдал!")
             user["mode"] = None
             save_users()
             return
