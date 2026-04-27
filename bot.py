@@ -1,7 +1,6 @@
 import os
 import logging
 import json
-import random
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types
@@ -65,46 +64,22 @@ def get_main_kb(lang):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     if lang == "kz":
         kb.add("🚗 Тест ПДД", "📚 Оқу")
-        kb.add("📝 Емтихан")
         kb.add("💰 Сатып алу")
     else:
         kb.add("🚗 Тест ПДД", "📚 Обучение")
-        kb.add("📝 Экзамен")
         kb.add("💰 Купить")
     return kb
 
-def get_back_kb(lang):
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("⬅️ Артқа" if lang == "kz" else "⬅️ Назад")
-    return kb
+answers_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+answers_kb.add("A", "B", "C", "D")
+answers_kb.add("🔙 Назад")
 
-def get_answers_kb(lang):
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("A", "B", "C", "D")
-    kb.add("⬅️ Артқа" if lang == "kz" else "⬅️ Назад")
-    return kb
+back_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+back_kb.add("🔙 Назад")
 
 pay_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="✅ Я оплатил / Төледім", callback_data="paid")]
 ])
-
-# ====== БАЗА 100+ ВОПРОСОВ (ШАБЛОН) ======
-questions_db = []
-
-categories = ["signs", "priority", "parking", "speed"]
-
-# генерим 120 вопросов автоматически
-for i in range(120):
-    questions_db.append({
-        "q_ru": f"Вопрос #{i+1}: Кто имеет преимущество?",
-        "q_kz": f"{i+1}-сұрақ: Кімнің артықшылығы бар?",
-        "img": None,
-        "options": ["A", "B", "C", "D"],
-        "correct": random.choice(["A", "B", "C", "D"]),
-        "ex_ru": "Преимущество у водителя на главной дороге.",
-        "ex_kz": "Басты жолдағы жүргізушінің артықшылығы бар.",
-        "category": random.choice(categories)
-    })
 
 # ====== START ======
 @dp.message_handler(commands=["start"])
@@ -116,8 +91,7 @@ async def start(msg: types.Message):
         "premium": False,
         "expires": None,
         "lang": None,
-        "mode": None,
-        "exam": None
+        "mode": None
     })
     save_users()
 
@@ -130,28 +104,46 @@ async def set_lang(msg: types.Message):
 
     if "Русский" in msg.text:
         users[uid]["lang"] = "ru"
-        text = "🚗 AI-тренер ПДД\nВыбери режим"
+        text = "🚗 Привет! Я AI-тренер по ПДД KZ\n\nВыбери режим 👇"
     else:
         users[uid]["lang"] = "kz"
-        text = "🚗 ПДД жаттықтырушы\nРежим таңда"
+        text = "🚗 Сәлем! Мен ПДД бойынша AI жаттықтырушы\n\nТаңдаңыз 👇"
 
     save_users()
 
     await msg.answer(text, reply_markup=get_main_kb(users[uid]["lang"]))
 
 # ====== BACK ======
-@dp.message_handler(lambda msg: msg.text in ["⬅️ Назад", "⬅️ Артқа"])
+@dp.message_handler(lambda msg: msg.text == "🔙 Назад")
 async def back(msg: types.Message):
     uid = str(msg.from_user.id)
     lang = users[uid]["lang"]
 
     users[uid]["mode"] = None
-    users[uid]["exam"] = None
     save_users()
 
-    await msg.answer("Басты мәзір" if lang == "kz" else "Главное меню", reply_markup=get_main_kb(lang))
+    text = "Главное меню" if lang == "ru" else "Басты мәзір"
+    await msg.answer(text, reply_markup=get_main_kb(lang))
 
-# ====== TEST ======
+# ====== BUY ======
+@dp.message_handler(lambda msg: msg.text in ["💰 Купить", "💰 Сатып алу"])
+async def buy(msg: types.Message):
+    uid = str(msg.from_user.id)
+    lang = users[uid]["lang"]
+
+    if lang == "kz":
+        text = "Толық қолжетімділік:\n7 күн — 5000 тг\n30 күн — 10000 тг"
+    else:
+        text = "Полный доступ:\n7 дней — 5000 тг\n30 дней — 10000 тг"
+
+    await msg.answer(text, reply_markup=pay_kb)
+
+@dp.callback_query_handler(lambda c: c.data == "paid")
+async def paid(callback: types.CallbackQuery):
+    await callback.message.answer("Отправь чек администратору / Чекті админге жібер")
+    await callback.answer()
+
+# ====== TEST MODE ======
 @dp.message_handler(lambda msg: "Тест ПДД" in msg.text)
 async def test(msg: types.Message):
     uid = str(msg.from_user.id)
@@ -159,21 +151,26 @@ async def test(msg: types.Message):
     save_users()
     await send_question(msg)
 
-# ====== EXAM MODE ======
-@dp.message_handler(lambda msg: "Экзамен" in msg.text or "Емтихан" in msg.text)
-async def exam_start(msg: types.Message):
+# ====== LEARNING MODE ======
+@dp.message_handler(lambda msg: "Обучение" in msg.text or "Оқу" in msg.text)
+async def learning(msg: types.Message):
     uid = str(msg.from_user.id)
+    lang = users[uid]["lang"]
 
-    users[uid]["mode"] = "exam"
-    users[uid]["exam"] = {
-        "current": 0,
-        "errors": 0
-    }
-
+    users[uid]["mode"] = "learn"
     save_users()
 
-    await msg.answer("Экзамен начался (20 вопросов, 3 ошибки = провал)" if users[uid]["lang"]=="ru" else "Емтихан басталды (20 сұрақ, 3 қате = құлау)")
-    await send_question(msg)
+    if lang == "kz":
+        prompt = "Қазақстан ПДД негіздерін қарапайым тілмен түсіндір"
+    else:
+        prompt = "Объясни ПДД Казахстана простым языком"
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    await msg.answer(response.choices[0].message.content, reply_markup=back_kb)
 
 # ====== QUESTION ======
 async def send_question(msg):
@@ -181,48 +178,54 @@ async def send_question(msg):
     user = users[uid]
     lang = user["lang"]
 
-    if user["mode"] == "exam":
-        exam = user["exam"]
+    if not is_premium(uid) and user["free_used"] >= FREE_LIMIT:
+        text = "Лимит закончился. Купи доступ" if lang == "ru" else "Лимит бітті. Сатып ал"
+        await msg.answer(text)
+        return
 
-        if exam["errors"] >= 3:
-            await msg.answer("❌ Провал" if lang=="ru" else "❌ Құладың")
-            user["mode"] = None
-            return
+    if lang == "kz":
+        prompt = "Қазақстан ПДД бойынша 1 тест сұрағын бер (A B C D)"
+    else:
+        prompt = "Дай 1 тестовый вопрос по ПДД Казахстана (A B C D)"
 
-        if exam["current"] >= 20:
-            await msg.answer("✅ Экзамен сдан!" if lang=="ru" else "✅ Емтихан өтті!")
-            user["mode"] = None
-            return
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
 
-        exam["current"] += 1
+    q = response.choices[0].message.content
 
-    q = random.choice(questions_db)
     user["last_question"] = q
+
+    if not is_premium(uid):
+        user["free_used"] += 1
+
     save_users()
 
-    text = q["q_kz"] if lang == "kz" else q["q_ru"]
-
-    await msg.answer(text, reply_markup=get_answers_kb(lang))
+    await msg.answer(q, reply_markup=answers_kb)
 
 # ====== ANSWER ======
 @dp.message_handler(lambda msg: msg.text in ["A", "B", "C", "D"])
 async def answer(msg: types.Message):
     uid = str(msg.from_user.id)
     user = users.get(uid)
+
+    if not user or "last_question" not in user:
+        return
+
     lang = user["lang"]
-    q = user["last_question"]
 
-    correct = q["correct"]
-
-    if msg.text != correct:
-        if user["mode"] == "exam":
-            user["exam"]["errors"] += 1
-
-    text = "✅ Правильно" if msg.text == correct else f"❌ Неправильно ({correct})"
     if lang == "kz":
-        text = "✅ Дұрыс" if msg.text == correct else f"❌ Қате ({correct})"
+        prompt = f"{user['last_question']}\nЖауап: {msg.text}\nДұрыс па және қысқаша түсіндір"
+    else:
+        prompt = f"{user['last_question']}\nОтвет: {msg.text}\nПравильно или нет и объясни кратко"
 
-    await msg.answer(text)
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    await msg.answer(response.choices[0].message.content)
 
     await send_question(msg)
 
