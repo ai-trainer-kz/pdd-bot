@@ -40,11 +40,20 @@ def load_users():
         users = {}
 
 # ===== USER =====
-def ensure_user(uid):
+def ensure_user(uid, lang_code=None):
     uid = str(uid)
+
     if uid not in users:
+        # авто-определение языка
+        lang = "ru"
+        if lang_code:
+            if "kk" in lang_code:
+                lang = "kz"
+            elif "ru" in lang_code:
+                lang = "ru"
+
         users[uid] = {
-            "lang": "ru",
+            "lang": lang,
             "mode": None,
             "correct_answer": None,
             "explanation": "",
@@ -121,8 +130,22 @@ D) ...
 # ===== START =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
-    ensure_user(message.from_user.id)
+
+    ensure_user(
+        message.from_user.id,
+        message.from_user.language_code
+    )
+
     u = users[str(message.from_user.id)]
+
+    # авто-язык
+    lang_code = message.from_user.language_code or ""
+    u["lang"] = "kz" if "kk" in lang_code else "ru"
+    save_users()
+
+    await message.answer(
+        "🌐 Язык: Русский" if u["lang"] == "ru" else "🌐 Тіл: Қазақша"
+    )
 
     await message.answer(
         t(u,
