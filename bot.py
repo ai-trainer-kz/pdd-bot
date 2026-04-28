@@ -131,6 +131,28 @@ D) ...
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
 
+@dp.message_handler(lambda m: "Язык" in m.text or "Тіл" in m.text)
+async def lang(message: types.Message):
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("🇷🇺 Русский", "🇰🇿 Қазақша")
+    kb.add("⬅️ Назад", "⬅️ Артқа")
+
+    await message.answer("Выбери язык / Тілді таңда:", reply_markup=kb)
+
+
+@dp.message_handler(lambda m: "Русский" in m.text or "Қазақша" in m.text)
+async def set_lang(message: types.Message):
+    u = users[str(message.from_user.id)]
+
+    if "Рус" in message.text:
+        u["lang"] = "ru"
+    else:
+        u["lang"] = "kz"
+
+    save_users()
+
+    await message.answer("✅", reply_markup=main_kb(u))
+
     ensure_user(
         message.from_user.id,
         message.from_user.language_code
@@ -140,7 +162,12 @@ async def start(message: types.Message):
 
     # авто-язык
     lang_code = message.from_user.language_code or ""
-    u["lang"] = "kz" if "kk" in lang_code else "ru"
+
+    if "ru" in lang_code:
+        u["lang"] = "ru"
+    else:
+        u["lang"] = "kz"
+    
     save_users()
 
     await message.answer(
@@ -266,8 +293,8 @@ async def receipt(message: types.Message):
             InlineKeyboardButton("✅ Дать доступ", callback_data=f"give_{user.id}")
         )
     )
-
     await message.answer("⏳ Чек отправлен на проверку")
+    
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give(callback: types.CallbackQuery):
     uid = callback.data.split("_")[1]
