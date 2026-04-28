@@ -99,10 +99,29 @@ def pay_kb(u):
     return kb
 
 # ===== GPT =====
-def ask_gpt():
-    prompt = """
+def ask_gpt(u):
+    if u["lang"] == "kz":
+        prompt = """
+Қазақстан ПДД бойынша емтихан сұрағын жаса.
+
+Формат:
+
+Сұрақ:
+...
+
+A) ...
+B) ...
+C) ...
+D) ...
+
+Дұрыс жауап: A
+Түсіндірме: қысқа
+"""
+    else:
+        prompt = """
 Сделай экзаменационный вопрос ПДД Казахстан.
-Формат строго:
+
+Формат:
 
 Вопрос:
 ...
@@ -115,6 +134,7 @@ D) ...
 Правильный ответ: A
 Объяснение: кратко
 """
+
     r = client.chat.completions.create(
         model=MODEL,
         messages=[{"role":"user","content":prompt}]
@@ -122,10 +142,11 @@ D) ...
 
     text = r.choices[0].message.content
 
-    ans = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
-    exp = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
+    # универсальный парсинг
+    ans = re.search(r"([ABCD])", text)
+    exp = re.search(r"(Объяснение|Түсіндірме)[:\s]*(.*)", text, re.S)
 
-    return text, ans.group(1) if ans else "A", exp.group(1).strip() if exp else ""
+    return text, ans.group(1) if ans else "A", exp.group(2).strip() if exp else ""
 
 # ===== START =====
 @dp.message_handler(commands=['start'])
@@ -277,14 +298,22 @@ async def receipt(message: types.Message):
     user = message.from_user
     u = users[str(user.id)]
 
-    await bot.send_photo(
-        ADMIN_ID,
-        message.photo[-1].file_id,
-        caption=f"💰 Оплата\nID: {user.id}\nТариф: {u.get('plan')}",
-        reply_markup=InlineKeyboardMarkup().add(
-            InlineKeyboardButton("✅ Дать доступ", callback_data=f"give_{user.id}")
+    # 🔍 DEBUG
+    print("PHOTO RECEIVED FROM USER:", user.id)
+    print("TRY SEND TO ADMIN:", ADMIN_ID)
+
+    try:
+        await bot.send_photo(
+            ADMIN_ID,
+            message.photo[-1].file_id,
+            caption=f"💰 Оплата\nID: {user.id}\nТариф: {u.get('plan')}",
+            reply_markup=InlineKeyboardMarkup().add(
+                InlineKeyboardButton("✅ Дать доступ", callback_data=f"give_{user.id}")
+            )
         )
-    )
+    except Exception as e:
+        print("ERROR:", e)
+
     await message.answer("⏳ Чек отправлен на проверку")
     
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
@@ -307,7 +336,7 @@ async def send_question(message, u):
     if not u["premium_until"]:
         u["used_free"] += 1
 
-    text, ans, exp = ask_gpt()
+    text, ans, exp = ask_gpt(u)
 
     u["correct_answer"] = ans
     u["explanation"] = exp
