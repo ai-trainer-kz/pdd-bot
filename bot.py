@@ -181,9 +181,9 @@ async def buy(message: types.Message):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("7 дней — 5000₸")
     kb.add("30 дней — 10000₸")
-    kb.add("⬅️ Назад")
+    kb.add("⬅️ Назад", "⬅️ Артқа")
 
-@dp.message_handler(lambda m: "Назад" in m.text or "Артқа" in m.text)
+@dp.message_handler(lambda m: "⬅️ Назад" in m.text or "⬅️ Артқа" in m.text)
 async def back(message: types.Message):
     u = users[str(message.from_user.id)]
     await message.answer("🏠 Главное меню", reply_markup=main_kb(u))
@@ -203,7 +203,7 @@ async def plan(message: types.Message):
 
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("💰 Оплатил")
-    kb.add("⬅️ Назад")
+    kb.add("⬅️ Назад", "⬅️ Артқа")
 
     await message.answer(
         f"💳 Оплата через Kaspi\n\n"
