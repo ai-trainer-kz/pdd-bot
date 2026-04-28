@@ -1,179 +1,122 @@
-import os
-import logging
 import json
-from datetime import datetime, timedelta
-
+import random
+import os
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
+from dotenv import load_dotenv
 
-from openai import OpenAI
+load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-DATA_FILE = "users.json"
+# ====== Загрузка вопросов ======
+with open("questions.json", "r", encoding="utf-8") as f:
+    questions = json.load(f)
 
-def load_users():
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
+# ====== Хранилище пользователей ======
+users = {}
 
-def save_users():
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
+# ====== Клавиатуры ======
+lang_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+lang_kb.add("🇷🇺 Русский", "🇰🇿 Қазақша")
 
-users = load_users()
-FREE_LIMIT = 5
+menu_kb_ru = ReplyKeyboardMarkup(resize_keyboard=True)
+menu_kb_ru.add("🚗 Тест", "📚 Обучение")
 
-def is_premium(user_id):
-    user = users.get(user_id)
-    if not user or not user.get("premium"):
-        return False
+menu_kb_kz = ReplyKeyboardMarkup(resize_keyboard=True)
+menu_kb_kz.add("🚗 Тест", "📚 Оқу")
 
-    expires = user.get("expires")
-    if not expires:
-        return False
-
-    expires_date = datetime.strptime(expires, "%Y-%m-%d")
-
-    if datetime.now() > expires_date:
-        user["premium"] = False
-        save_users()
-        return False
-
-    return True
-
-# ===== КНОПКИ =====
-main_kb = ReplyKeyboardMarkup(resize_keyboard=True)
-main_kb.add("🚗 Тест ПДД", "📚 Обучение")
-main_kb.add("💰 Купить")
-
-answers_kb = ReplyKeyboardMarkup(resize_keyboard=True)
-answers_kb.add("A", "B", "C", "D")
-answers_kb.add("🛑 Стоп")
-
-pay_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")]
-])
-
-# ===== START =====
-@dp.message_handler(commands=["start"])
+# ====== Старт ======
+@dp.message_handler(commands=['start'])
 async def start(msg: types.Message):
-    uid = str(msg.from_user.id)
+    users[msg.from_user.id] = {
+        "lang": None,
+        "score": 0,
+        "q_index": 0
+    }
 
-    users[uid] = users.get(uid, {
-        "free_used": 0,
-        "premium": False,
-        "expires": None
-    })
-    save_users()
+    await msg.answer("Выбери язык / Тілді таңда:", reply_markup=lang_kb)
 
-    await msg.answer(
-        "🚗 Привет! Я AI-тренер по ПДД KZ\n\nВыбери режим 👇",
-        reply_markup=main_kb
-    )
+# ====== Выбор языка ======
+@dp.message_handler(lambda m: m.text in ["🇷🇺 Русский", "🇰🇿 Қазақша"])
+async def set_language(msg: types.Message):
+    user = users[msg.from_user.id]
 
-# ===== КУПИТЬ =====
-@dp.message_handler(lambda msg: msg.text == "💰 Купить")
-async def buy(msg: types.Message):
-    await msg.answer(
-        "Полный доступ:\n7 дней — 5000 тг\n30 дней — 10000 тг\n\nПосле оплаты нажми кнопку ниже 👇",
-        reply_markup=pay_kb
-    )
+    if "Русский" in msg.text:
+        user["lang"] = "ru"
+        await msg.answer("Выбери режим:", reply_markup=menu_kb_ru)
+    else:
+        user["lang"] = "kz"
+        await msg.answer("Режимді таңда:", reply_markup=menu_kb_kz)
 
-@dp.callback_query_handler(lambda c: c.data == "paid")
-async def paid(callback: types.CallbackQuery):
-    await callback.message.answer("Отправь чек администратору")
-    await callback.answer()
+# ====== Запуск теста ======
+@dp.message_handler(lambda m: "Тест" in m.text or "🚗" in m.text)
+async def start_test(msg: types.Message):
+    user = users[msg.from_user.id]
+    user["score"] = 0
+    user["q_index"] = 0
+    random.shuffle(questions)
 
-# ===== ТЕСТ =====
-@dp.message_handler(lambda msg: msg.text == "🚗 Тест ПДД")
-async def test(msg: types.Message):
     await send_question(msg)
 
-# ===== СТОП =====
-@dp.message_handler(lambda msg: msg.text == "🛑 Стоп")
-async def stop(msg: types.Message):
-    await msg.answer("Тест остановлен", reply_markup=main_kb)
-
-# ===== ВОПРОС =====
+# ====== Отправка вопроса ======
 async def send_question(msg):
-    uid = str(msg.from_user.id)
-    user = users[uid]
+    user = users[msg.from_user.id]
 
-    if not is_premium(uid) and user["free_used"] >= FREE_LIMIT:
-        await msg.answer("Лимит закончился. Купи доступ")
+    if user["q_index"] >= len(questions):
+        await msg.answer(f"✅ Тест завершен!\nРезультат: {user['score']}/{len(questions)}")
         return
 
-    prompt = """
-Ты — экзаменатор ПДД Казахстана.
+    q = questions[user["q_index"]]
 
-Задай 1 вопрос как на экзамене.
-Формат:
-Вопрос
-A)
-B)
-C)
-D)
+    if user["lang"] == "ru":
+        text = q["q_ru"] + "\n\n" + "\n".join(q["options_ru"])
+    else:
+        text = q["q_kz"] + "\n\n" + "\n".join(q["options_kz"])
 
-НЕ пиши ответ
-"""
+    await msg.answer(text)
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
+# ====== Ответ пользователя ======
+@dp.message_handler(lambda m: m.text and m.text[0] in ["A", "B", "C", "D"])
+async def handle_answer(msg: types.Message):
+    user = users[msg.from_user.id]
+    q = questions[user["q_index"]]
 
-    q = response.choices[0].message.content
+    answer = msg.text[0]
 
-    user["last_question"] = q
+    if answer == q["correct"]:
+        user["score"] += 1
+        await msg.answer("✅ Правильно!" if user["lang"] == "ru" else "✅ Дұрыс!")
+    else:
+        await msg.answer("❌ Неправильно!" if user["lang"] == "ru" else "❌ Қате!")
 
-    if not is_premium(uid):
-        user["free_used"] += 1
+    # объяснение
+    if user["lang"] == "ru":
+        await msg.answer(q["ex_ru"])
+    else:
+        await msg.answer(q["ex_kz"])
 
-    save_users()
-
-    await msg.answer(q, reply_markup=answers_kb)
-
-# ===== ОТВЕТ =====
-@dp.message_handler(lambda msg: msg.text in ["A", "B", "C", "D"])
-async def answer(msg: types.Message):
-    uid = str(msg.from_user.id)
-    user = users.get(uid)
-
-    if "last_question" not in user:
-        return
-
-    prompt = f"""
-Вопрос:
-{user['last_question']}
-
-Ответ пользователя: {msg.text}
-
-Скажи:
-1. Правильно или нет
-2. Короткое объяснение
-"""
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    res = response.choices[0].message.content
-
-    await msg.answer(res)
-
+    user["q_index"] += 1
     await send_question(msg)
 
-# ===== ЗАПУСК =====
+# ====== Обучение ======
+@dp.message_handler(lambda m: "Обучение" in m.text or "Оқу" in m.text)
+async def learning(msg: types.Message):
+    user = users[msg.from_user.id]
+
+    q = random.choice(questions)
+
+    if user["lang"] == "ru":
+        text = q["q_ru"] + "\n\n" + q["ex_ru"]
+    else:
+        text = q["q_kz"] + "\n\n" + q["ex_kz"]
+
+    await msg.answer(text)
+
+# ====== Запуск ======
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
