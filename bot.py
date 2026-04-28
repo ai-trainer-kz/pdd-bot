@@ -40,16 +40,10 @@ def load_users():
         users = {}
 
 # ===== USER =====
-def ensure_user(uid, lang_code=None):
+def ensure_user(uid):
     uid = str(uid)
-
     if uid not in users:
-        lang = "ru"
-        if lang_code and "kk" in lang_code:
-            lang = "kz"
-
         users[uid] = {
-            "lang": lang,
             "mode": None,
             "correct_answer": None,
             "explanation": "",
@@ -72,46 +66,28 @@ def has_access(u):
         pass
     return u["used_free"] < u["free_limit"]
 
-# ===== TEXT =====
-def t(u, ru, kz):
-    return ru if u["lang"] == "ru" else kz
-
 # ===== UI =====
-def main_kb(u):
+def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(t(u,"🎯 Тренировка","🎯 Жаттығу"), t(u,"🧠 Экзамен","🧠 Емтихан"))
-    kb.add("📊 Статистика", t(u,"🌐 Язык","🌐 Тіл"))
-    kb.add(t(u,"💳 Купить доступ","💳 Сатып алу"))
+    kb.add("🎯 Тренировка", "🧠 Экзамен")
+    kb.add("📊 Статистика", "💳 Купить доступ")
     return kb
 
-def answer_kb(u):
+def answer_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("A","B","C","D")
-    kb.add(t(u,"⬅️ Назад","⬅️ Артқа"))
+    kb.add("⬅️ Назад")
     return kb
 
 # ===== GPT =====
-def ask_gpt(u):
-    if u["lang"] == "kz":
-        prompt = """
-Қазақстан ПДД бойынша сұрақ жаса.
+def ask_gpt():
+    prompt = """
+Сделай экзаменационный вопрос ПДД Казахстан.
 
-Сұрақ:
-...
-A) ...
-B) ...
-C) ...
-D) ...
-
-Дұрыс жауап: A
-Түсіндірме: қысқа
-"""
-    else:
-        prompt = """
-Сделай вопрос ПДД Казахстан.
-
+Формат:
 Вопрос:
 ...
+
 A) ...
 B) ...
 C) ...
@@ -128,30 +104,27 @@ D) ...
 
     text = r.choices[0].message.content
 
-    # ✅ ПРАВИЛЬНЫЙ ПАРСИНГ
-    ans = re.search(r"(Правильный ответ|Дұрыс жауап)[:\s]*([ABCD])", text)
-    exp = re.search(r"(Объяснение|Түсіндірме)[:\s]*(.*)", text, re.S)
+    ans = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
+    exp = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
 
-    return text, ans.group(2) if ans else "A", exp.group(2).strip() if exp else ""
+    return text, ans.group(1) if ans else "A", exp.group(1).strip() if exp else ""
 
 # ===== START =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
-    ensure_user(message.from_user.id, message.from_user.language_code)
-    u = users[str(message.from_user.id)]
+    ensure_user(message.from_user.id)
 
     await message.answer(
-        "🌐 Язык: Русский" if u["lang"] == "ru" else "🌐 Тіл: Қазақша"
-    )
-
-    await message.answer(
-        t(u,"🚗 Подготовка к ПДД\n\n👇 Выбери режим:",
-          "🚗 ПДД дайындық\n\n👇 Режимді таңда:"),
-        reply_markup=main_kb(u)
+        "🚗 Подготовка к ПДД\n\n"
+        "🎁 5 бесплатных вопросов\n"
+        "📊 Проверь свой уровень\n"
+        "🚀 Сдай экзамен с первого раза\n\n"
+        "👇 Выбери режим:",
+        reply_markup=main_kb()
     )
 
 # ===== MODE =====
-@dp.message_handler(lambda m: "Тренировка" in m.text or "Жаттығу" in m.text)
+@dp.message_handler(lambda m: m.text == "🎯 Тренировка")
 async def train(message: types.Message):
     u = users[str(message.from_user.id)]
     u["mode"] = "train"
@@ -162,7 +135,7 @@ async def train(message: types.Message):
 
     await send_question(message, u)
 
-@dp.message_handler(lambda m: "Экзамен" in m.text or "Емтихан" in m.text)
+@dp.message_handler(lambda m: m.text == "🧠 Экзамен")
 async def exam(message: types.Message):
     u = users[str(message.from_user.id)]
     u["mode"] = "exam"
@@ -173,7 +146,7 @@ async def exam(message: types.Message):
     await send_question(message, u)
 
 # ===== BUY =====
-@dp.message_handler(lambda m: "Купить" in m.text or "Сатып" in m.text)
+@dp.message_handler(lambda m: m.text == "💳 Купить доступ")
 async def buy(message: types.Message):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("7 дней — 5000₸")
@@ -188,16 +161,15 @@ async def plan(message: types.Message):
     u["plan"] = 7 if "7" in message.text else 30
     save_users()
 
-    await message.answer(f"💳 Kaspi: {KASPI}\n📦 {u['plan']} дней\n📸 Отправь чек")
+    await message.answer(
+        f"💳 Kaspi: {KASPI}\n📦 {u['plan']} дней\n📸 Отправь чек"
+    )
 
 # ===== PHOTO =====
 @dp.message_handler(content_types=types.ContentType.PHOTO)
 async def receipt(message: types.Message):
     user = message.from_user
     u = users[str(user.id)]
-
-    print("PHOTO RECEIVED:", user.id)
-    print("SEND TO:", ADMIN_ID)
 
     try:
         await bot.send_photo(
@@ -214,6 +186,7 @@ async def receipt(message: types.Message):
 
     await message.answer("⏳ Отправлено админу")
 
+# ===== GIVE ACCESS =====
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give(callback: types.CallbackQuery):
     uid = callback.data.split("_")[1]
@@ -227,16 +200,15 @@ async def give(callback: types.CallbackQuery):
 
 # ===== QUESTION =====
 async def send_question(message, u):
-    text, ans, exp = ask_gpt(u)
+    text, ans, exp = ask_gpt()
 
-    # ❌ убираем ответ
-    clean = re.sub(r"(Правильный ответ|Дұрыс жауап).*", "", text, flags=re.S)
-    clean = re.sub(r"(Объяснение|Түсіндірме).*", "", clean, flags=re.S)
+    clean = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
+    clean = re.sub(r"Объяснение.*", "", clean, flags=re.S)
 
     u["correct_answer"] = ans
     u["explanation"] = exp
 
-    await message.answer(clean, reply_markup=answer_kb(u))
+    await message.answer(clean, reply_markup=answer_kb())
     save_users()
 
 # ===== ANSWER =====
@@ -270,7 +242,7 @@ async def answer(message: types.Message):
     await send_question(message, u)
 
 # ===== STATS =====
-@dp.message_handler(lambda m: "Статистика" in m.text)
+@dp.message_handler(lambda m: m.text == "📊 Статистика")
 async def stats(message: types.Message):
     u = users[str(message.from_user.id)]
 
