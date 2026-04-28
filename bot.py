@@ -3,7 +3,6 @@ import logging
 import json
 from datetime import datetime, timedelta
 import re
-import random
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
@@ -47,17 +46,11 @@ def ensure_user(uid):
         users[uid] = {
             "lang": "ru",
             "mode": None,
-            "topic": None,
-            "level": None,
-            "correct": 0,
-            "wrong": 0,
-            "total_correct": 0,
-            "total_wrong": 0,
-            "exam_q": 0,
-            "premium_until": None,
             "correct_answer": None,
+            "explanation": "",
             "free_limit": 5,
             "used_free": 0,
+            "premium_until": None,
             "plan": None
         }
         save_users()
@@ -69,59 +62,42 @@ def has_access(u):
     except:
         pass
 
-    if u["used_free"] < u["free_limit"]:
-        return True
+    return u["used_free"] < u["free_limit"]
 
-    return False
-
-# ===== UI =====
+# ===== TEXT =====
 def t(u, ru, kz):
     return ru if u["lang"] == "ru" else kz
 
+# ===== UI =====
 def main_kb(u):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add(t(u,"🎯 Тренировка","🎯 Жаттығу"), t(u,"🧠 Экзамен","🧠 Емтихан"))
     kb.add(t(u,"📊 Статистика","📊 Статистика"), t(u,"🌐 Язык","🌐 Тіл"))
-    kb.add(t(u,"💳 Купить доступ","💳 Қолжетімділік сатып алу"))
+    kb.add(t(u,"💳 Купить доступ","💳 Сатып алу"))
     return kb
 
-def lang_kb():
+def back_kb(u):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🇷🇺 Русский", "🇰🇿 Қазақша")
+    kb.add(t(u,"⬅️ Назад","⬅️ Артқа"))
     return kb
 
-def topic_kb(u):
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🚸 Знаки","🛣 Разметка")
-    kb.add("🚦 Перекрестки","🚗 Общие")
-    kb.add("⬅️ Назад")
-    return kb
-
-def level_kb():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🟢 Легкий","🟡 Средний","🔴 Сложный")
-    kb.add("⬅️ Назад")
-    return kb
-
-def answer_kb():
+def answer_kb(u):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("A","B","C","D")
+    kb.add(t(u,"⬅️ Назад","⬅️ Артқа"))
     return kb
 
 def pay_kb(u):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add(t(u,"💰 Оплатил","💰 Төледім"))
-    kb.add("⬅️ Назад")
+    kb.add(t(u,"⬅️ Назад","⬅️ Артқа"))
     return kb
 
 # ===== GPT =====
-def system_prompt(u):
-    lang = "на русском" if u["lang"] == "ru" else "қазақ тілінде"
-
-    return f"""
-Ты экзаменатор ПДД. Отвечай {lang}.
-
-Сделай 1 вопрос.
+def ask_gpt(u):
+    try:
+        prompt = f"""
+Сделай вопрос ПДД.
 
 Формат:
 Вопрос:
@@ -131,22 +107,24 @@ B) ...
 C) ...
 D) ...
 
-Правильный ответ:
-A
+Правильный ответ: A
+Объяснение: ...
 """
 
-def ask_gpt(u):
-    try:
         r = client.chat.completions.create(
             model=MODEL,
-            messages=[
-                {"role":"system","content":system_prompt(u)},
-                {"role":"user","content":"Вопрос"}
-            ]
+            messages=[{"role":"user","content":prompt}]
         )
-        return r.choices[0].message.content
+
+        text = r.choices[0].message.content
+
+        ans = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
+        exp = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
+
+        return text, ans.group(1) if ans else "A", exp.group(1).strip() if exp else ""
+
     except:
-        return None
+        return "Ошибка", "A", ""
 
 # ===== START =====
 @dp.message_handler(commands=['start'])
@@ -155,67 +133,68 @@ async def start(message: types.Message):
     u = users[str(message.from_user.id)]
 
     await message.answer(
-        t(u,
-          "🚗 AI ПДД Инструктор\n\n5 бесплатных вопросов 🎁",
-          "🚗 AI ПДД Инструктор\n\n5 тегін сұрақ 🎁"),
+        t(u,"🚗 AI ПДД\n\n5 бесплатных вопросов 🎁","🚗 AI ПДД\n\n5 тегін сұрақ 🎁"),
         reply_markup=main_kb(u)
     )
 
 # ===== LANGUAGE =====
 @dp.message_handler(lambda m: m.text in ["🌐 Язык","🌐 Тіл"])
 async def lang(message: types.Message):
-    await message.answer("Тілді таңда / Выбери язык", reply_markup=lang_kb())
+    await message.answer("Выбери / Таңда", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).add("🇷🇺 Русский","🇰🇿 Қазақша"))
 
 @dp.message_handler(lambda m: m.text in ["🇷🇺 Русский","🇰🇿 Қазақша"])
 async def set_lang(message: types.Message):
     u = users[str(message.from_user.id)]
     u["lang"] = "ru" if "Рус" in message.text else "kz"
     save_users()
+    await message.answer("✅", reply_markup=main_kb(u))
 
-    await message.answer("✅ OK", reply_markup=main_kb(u))
+# ===== BACK =====
+@dp.message_handler(lambda m: "Назад" in m.text or "Артқа" in m.text)
+async def back(message: types.Message):
+    u = users[str(message.from_user.id)]
+    await message.answer("🏠", reply_markup=main_kb(u))
 
 # ===== BUY =====
-@dp.message_handler(lambda m: "Купить" in m.text or "сатып" in m.text)
+@dp.message_handler(lambda m: "Купить" in m.text or "Сатып" in m.text)
 async def buy(message: types.Message):
     u = users[str(message.from_user.id)]
 
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🟢 7 дней — 2000₸")
-    kb.add("🔵 30 дней — 5000₸")
-    kb.add("🔴 90 дней — 12000₸")
+    kb.add("🟢 7 дней")
+    kb.add("🔵 30 дней")
+    kb.add("🔴 90 дней")
+    kb.add(t(u,"⬅️ Назад","⬅️ Артқа"))
 
-    await message.answer(
-        t(u,"Выбери тариф:","Тариф таңда:"),
-        reply_markup=kb
-    )
+    await message.answer("Тариф:", reply_markup=kb)
 
 @dp.message_handler(lambda m: "дней" in m.text)
 async def plan(message: types.Message):
     u = users[str(message.from_user.id)]
 
-    if "7" in message.text:
-        u["plan"] = 7
-    elif "30" in message.text:
-        u["plan"] = 30
-    elif "90" in message.text:
-        u["plan"] = 90
+    if "7" in message.text: u["plan"]=7
+    elif "30" in message.text: u["plan"]=30
+    elif "90" in message.text: u["plan"]=90
 
     save_users()
 
-    await message.answer(f"Kaspi: {KASPI}\nОтправь чек")
+    await message.answer(f"Kaspi: {KASPI}\nОтправь чек", reply_markup=pay_kb(u))
 
-# ===== RECEIPT =====
+@dp.message_handler(lambda m: "Оплатил" in m.text or "Төледім" in m.text)
+async def paid(message: types.Message):
+    await message.answer("Отправь чек (скрин)")
+
 @dp.message_handler(content_types=types.ContentType.PHOTO)
 async def receipt(message: types.Message):
     await bot.send_photo(
         ADMIN_ID,
         message.photo[-1].file_id,
-        caption=f"Оплата от {message.from_user.id}",
+        caption=f"user {message.from_user.id}",
         reply_markup=InlineKeyboardMarkup().add(
-            InlineKeyboardButton("Выдать", callback_data=f"give_{message.from_user.id}")
+            InlineKeyboardButton("OK", callback_data=f"give_{message.from_user.id}")
         )
     )
-    await message.answer("⏳ Проверка...")
+    await message.answer("⏳ Проверка")
 
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give(callback: types.CallbackQuery):
@@ -237,9 +216,6 @@ async def mode(message: types.Message):
         await message.answer("🔒 Лимит закончился", reply_markup=pay_kb(u))
         return
 
-    u["mode"] = message.text
-    save_users()
-
     await send_question(message, u)
 
 # ===== QUESTION =====
@@ -249,18 +225,18 @@ async def send_question(message, u):
         await message.answer("🔒 Купи доступ", reply_markup=pay_kb(u))
         return
 
-    if not u.get("premium_until"):
+    if not u["premium_until"]:
         u["used_free"] += 1
 
-    text = ask_gpt(u)
+    text, ans, exp = ask_gpt(u)
 
-    if not text:
-        text = "Ошибка генерации"
+    u["correct_answer"] = ans
+    u["explanation"] = exp
 
-    match = re.search(r"([ABCD])", text)
-    u["correct_answer"] = match.group(1) if match else "A"
+    clean = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
+    clean = re.sub(r"Объяснение.*", "", clean, flags=re.S)
 
-    await message.answer(text, reply_markup=answer_kb())
+    await message.answer(clean, reply_markup=answer_kb(u))
     save_users()
 
 # ===== ANSWER =====
@@ -269,9 +245,12 @@ async def answer(message: types.Message):
     u = users[str(message.from_user.id)]
 
     if message.text == u["correct_answer"]:
-        await message.answer("✅")
+        await message.answer("✅ Верно")
     else:
-        await message.answer(f"❌ {u['correct_answer']}")
+        await message.answer(f"❌ Неверно\nОтвет: {u['correct_answer']}")
+
+    if u["explanation"]:
+        await message.answer(f"📘 {u['explanation']}")
 
     await send_question(message, u)
 
