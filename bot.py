@@ -117,7 +117,7 @@ async def start(message: types.Message):
     await message.answer(
         "🚗 Подготовка к ПДД\n\n"
         "🎁 5 бесплатных вопросов\n"
-        "📊 Проверь свой уровень\n"
+        "📊 Проверь уровень\n"
         "🚀 Сдай экзамен с первого раза\n\n"
         "👇 Выбери режим:",
         reply_markup=main_kb()
@@ -130,7 +130,7 @@ async def train(message: types.Message):
     u["mode"] = "train"
 
     if not has_access(u):
-        await message.answer("🔒 Купи доступ")
+        await message.answer("🔒 Купи доступ", reply_markup=main_kb())
         return
 
     await send_question(message, u)
@@ -151,21 +151,16 @@ async def buy(message: types.Message):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("7 дней — 5000₸")
     kb.add("30 дней — 10000₸")
-    kb.add("⬅️ Назад")  
+    kb.add("⬅️ Назад")
 
     await message.answer("💰 Выбери тариф:", reply_markup=kb)
 
-    await message.answer("💰 Выбери тариф:", reply_markup=kb)
-
+# ===== PLAN =====
 @dp.message_handler(lambda m: m.text in ["7 дней — 5000₸", "30 дней — 10000₸"])
 async def plan(message: types.Message):
     u = users[str(message.from_user.id)]
 
-    if "7" in message.text:
-        u["plan"] = 7
-    else:
-        u["plan"] = 30
-
+    u["plan"] = 7 if "7" in message.text else 30
     save_users()
 
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -175,68 +170,48 @@ async def plan(message: types.Message):
     await message.answer(
         f"💳 Kaspi: {KASPI}\n\n"
         f"📦 Тариф: {u['plan']} дней\n\n"
-        "1️⃣ Оплати\n"
-        "2️⃣ Нажми «Я оплатил»\n"
-        "3️⃣ Отправь чек",
+        "1️⃣ Оплати\n2️⃣ Нажми «Я оплатил»\n3️⃣ Отправь чек",
         reply_markup=kb
     )
 
 @dp.message_handler(lambda m: m.text == "📸 Я оплатил")
 async def paid(message: types.Message):
-    await message.answer("📤 Отправь чек (скрин оплаты)")
+    await message.answer("📤 Отправь чек (фото)")
 
 # ===== PHOTO =====
 @dp.message_handler(content_types=types.ContentType.PHOTO)
 async def receipt(message: types.Message):
     user = message.from_user
-    u = users[str(user.id)]
+    uid = str(user.id)
+    u = users.get(uid)
 
-    kb = InlineKeyboardMarkup()
+    if not u or not u.get("plan"):
+        await message.answer("Сначала выбери тариф")
+        return
+
+    kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
-        InlineKeyboardButton("✅ 7 дней", callback_data=f"give_7_{user.id}"),
-        InlineKeyboardButton("✅ 30 дней", callback_data=f"give_30_{user.id}")
+        InlineKeyboardButton("✅ 7 дней", callback_data=f"give_7_{uid}"),
+        InlineKeyboardButton("✅ 30 дней", callback_data=f"give_30_{uid}")
     )
     kb.add(
-        InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}")
+        InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{uid}")
     )
 
     await bot.send_photo(
         ADMIN_ID,
         message.photo[-1].file_id,
-        caption=f"💰 Оплата\nID: {user.id}\nТариф: {u.get('plan')} дней",
+        caption=f"💰 Оплата\nID: {uid}\nТариф: {u['plan']} дней",
         reply_markup=kb
     )
 
-    await message.answer("⏳ Чек отправлен на проверку")
+    await message.answer("⏳ Чек отправлен админу")
 
-# ===== ВЫДАЧА ДОСТУПА =====
+# ===== CALLBACK =====
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give(callback: types.CallbackQuery):
-    data = callback.data.split("_")
-    days = int(data[1])
-    uid = data[2]
-
-    users[uid]["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
-    save_users()
-
-    await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
-    await callback.answer("Доступ выдан")
-
-
-# ===== ОТКАЗ =====
-@dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
-async def deny(callback: types.CallbackQuery):
-    uid = callback.data.split("_")[1]
-
-    await bot.send_message(uid, "❌ Оплата отклонена")
-    await callback.answer("Отклонено")
-
-# ===== GIVE ACCESS =====
-@dp.callback_query_handler(lambda c: c.data.startswith("give_"))
-async def give(callback: types.CallbackQuery):
-    data = callback.data.split("_")
-    days = int(data[1])
-    uid = data[2]
+    _, days, uid = callback.data.split("_")
+    days = int(days)
 
     users[uid]["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
     save_users()
@@ -244,7 +219,6 @@ async def give(callback: types.CallbackQuery):
     await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
     await callback.answer("OK")
 
-# ===== DENY =====
 @dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
 async def deny(callback: types.CallbackQuery):
     uid = callback.data.split("_")[1]
@@ -254,6 +228,13 @@ async def deny(callback: types.CallbackQuery):
 
 # ===== QUESTION =====
 async def send_question(message, u):
+    if not has_access(u):
+        await message.answer("🔒 Купи доступ", reply_markup=main_kb())
+        return
+
+    if not u["premium_until"]:
+        u["used_free"] += 1
+
     text, ans, exp = ask_gpt()
 
     clean = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
@@ -269,15 +250,6 @@ async def send_question(message, u):
 @dp.message_handler(lambda m: m.text in ["A","B","C","D"])
 async def answer(message: types.Message):
     u = users[str(message.from_user.id)]
-
-@dp.message_handler(lambda m: m.text == "⬅️ Назад")
-async def back(message: types.Message):
-    ensure_user(message.from_user.id)
-
-    await message.answer(
-        "🏠 Главное меню",
-        reply_markup=main_kb()
-    )    
 
     if message.text == u["correct_answer"]:
         u["correct"] += 1
@@ -302,7 +274,17 @@ async def back(message: types.Message):
             )
             return
 
+    save_users()
     await send_question(message, u)
+
+# ===== BACK =====
+@dp.message_handler(lambda m: m.text == "⬅️ Назад")
+async def back(message: types.Message):
+    ensure_user(message.from_user.id)
+    users[str(message.from_user.id)]["mode"] = None
+    save_users()
+
+    await message.answer("🏠 Главное меню", reply_markup=main_kb())
 
 # ===== STATS =====
 @dp.message_handler(lambda m: m.text == "📊 Статистика")
@@ -312,36 +294,11 @@ async def stats(message: types.Message):
     total = u["correct"] + u["wrong"]
     percent = int(u["correct"]/total*100) if total else 0
 
-    level = "Новичок"
-    if percent > 50:
-        level = "Средний"
-    if percent > 80:
-        level = "Готов к экзамену"
-
     await message.answer(
         f"📊 Статистика\n\n"
         f"✅ Правильно: {u['correct']}\n"
         f"❌ Ошибки: {u['wrong']}\n"
-        f"📈 Процент: {percent}%\n"
-        f"🏆 Уровень: {level}"
-    )
-
-# ===== STATS =====
-@dp.message_handler(lambda m: "Статистика" in m.text)
-async def stats(message: types.Message):
-    ...
-
-# ===== BACK =====
-@dp.message_handler(lambda m: m.text == "⬅️ Назад")
-async def back(message: types.Message):
-    u = users[str(message.from_user.id)]
-
-    u["mode"] = None
-    save_users()
-
-    await message.answer(
-        "🔙 Главное меню",
-        reply_markup=main_kb(u)
+        f"📈 Процент: {percent}%"
     )
 
 # ===== RUN =====
