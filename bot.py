@@ -146,11 +146,14 @@ async def exam(message: types.Message):
     await send_question(message, u)
 
 # ===== BUY =====
-@dp.message_handler(lambda m: m.text == "💳 Купить доступ")
+@dp.message_handler(lambda m: "Купить" in m.text)
 async def buy(message: types.Message):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("7 дней — 5000₸")
     kb.add("30 дней — 10000₸")
+    kb.add("⬅️ Назад")  
+
+    await message.answer("💰 Выбери тариф:", reply_markup=kb)
 
     await message.answer("💰 Выбери тариф:", reply_markup=kb)
 
@@ -315,6 +318,24 @@ async def stats(message: types.Message):
         f"❌ Ошибки: {u['wrong']}\n"
         f"📈 Процент: {percent}%\n"
         f"🏆 Уровень: {level}"
+    )
+
+# ===== STATS =====
+@dp.message_handler(lambda m: "Статистика" in m.text)
+async def stats(message: types.Message):
+    ...
+
+# ===== BACK =====
+@dp.message_handler(lambda m: m.text == "⬅️ Назад")
+async def back(message: types.Message):
+    u = users[str(message.from_user.id)]
+
+    u["mode"] = None
+    save_users()
+
+    await message.answer(
+        "🔙 Главное меню",
+        reply_markup=main_kb(u)
     )
 
 # ===== RUN =====
