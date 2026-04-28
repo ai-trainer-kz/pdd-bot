@@ -171,26 +171,66 @@ async def receipt(message: types.Message):
     user = message.from_user
     u = users[str(user.id)]
 
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
+        InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
+    )
+    kb.add(
+        InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}")
+    )
+
     try:
         await bot.send_photo(
             ADMIN_ID,
             message.photo[-1].file_id,
-            caption=f"💰 Оплата\nID: {user.id}\nТариф: {u.get('plan')}",
-            reply_markup=InlineKeyboardMarkup().add(
-                InlineKeyboardButton("✅ Дать доступ", callback_data=f"give_{user.id}")
-            )
+            caption=(
+                f"💰 Оплата\n"
+                f"👤 ID: {user.id}\n"
+                f"📦 Выбрал: {u.get('plan')} дней"
+            ),
+            reply_markup=kb
         )
-        print("SUCCESS SEND")
+        print("SUCCESS SEND TO ADMIN")
+
     except Exception as e:
         print("ERROR:", e)
+        await message.answer("❌ Ошибка отправки админу")
+        return
 
-    await message.answer("⏳ Отправлено админу")
+    await message.answer("⏳ Чек отправлен на проверку")
 
-# ===== GIVE ACCESS =====
+# ===== ВЫДАЧА ДОСТУПА =====
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give(callback: types.CallbackQuery):
+    data = callback.data.split("_")
+    days = int(data[1])
+    uid = data[2]
+
+    users[uid]["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
+    save_users()
+
+    await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
+    await callback.answer("Доступ выдан")
+
+
+# ===== ОТКАЗ =====
+@dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
+async def deny(callback: types.CallbackQuery):
     uid = callback.data.split("_")[1]
-    days = users[uid].get("plan", 7)
+
+    await bot.send_message(uid, "❌ Оплата отклонена")
+    await callback.answer("Отклонено")
+
+# ===== GIVE ACCESS =====
+kb = InlineKeyboardMarkup(row_width=2)
+kb.add(
+    InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
+    InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
+)
+kb.add(
+    InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}")
+)
 
     users[uid]["premium_until"] = (datetime.now()+timedelta(days=days)).isoformat()
     save_users()
@@ -215,6 +255,15 @@ async def send_question(message, u):
 @dp.message_handler(lambda m: m.text in ["A","B","C","D"])
 async def answer(message: types.Message):
     u = users[str(message.from_user.id)]
+
+@dp.message_handler(lambda m: m.text == "⬅️ Назад")
+async def back(message: types.Message):
+    ensure_user(message.from_user.id)
+
+    await message.answer(
+        "🏠 Главное меню",
+        reply_markup=main_kb()
+    )    
 
     if message.text == u["correct_answer"]:
         u["correct"] += 1
