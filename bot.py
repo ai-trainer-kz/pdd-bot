@@ -4,6 +4,20 @@ import json
 from datetime import datetime, timedelta
 import re
 
+USERS_FILE = "users.json"
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_users():
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
+
+users = load_users()
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
@@ -206,6 +220,10 @@ async def plan(message: types.Message):
 async def paid(message: types.Message):
     user = message.from_user
     u = users.get(str(user.id), {})
+    
+    u["status"] = "pending"
+    users[str(user.id)] = u
+    save_users()
 
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -240,11 +258,14 @@ async def paid(message: types.Message):
 
 # ===== CALLBACK =====
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
-async def give(callback: types.CallbackQuery):
+async def give_access(callback: types.CallbackQuery):
     data = callback.data.split("_")
     days = int(data[1])
-    uid = data[2]
+    user_id = data[2]
 
+    u = users.get(str(user_id), {})
+    
+    u["status"] = "active"
     users[uid]["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
     save_users()
 
