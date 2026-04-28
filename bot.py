@@ -85,27 +85,42 @@ async def lang(msg: types.Message):
     await msg.answer("Выбери режим", reply_markup=main_kb(users[uid]["lang"]))
 
 # ===== TEST =====
-@dp.message_handler(lambda m: "Тест" in m.text)
+@dp.message_handler(lambda msg: "Тест ПДД" in msg.text)
 async def test(msg: types.Message):
     uid = str(msg.from_user.id)
+    user = users[uid]
 
-    users[uid]["mode"] = "test"
-    users[uid]["queue"] = random.sample(questions_db, len(questions_db))
-    save()
+    if user.get("mode") == "test":
+        return
+
+    user["mode"] = "test"
+    user["used_questions"] = []
+
+    save_users()
 
     await send_question(msg)
 
 # ===== EXAM =====
-@dp.message_handler(lambda m: "Экзамен" in m.text or "Емтихан" in m.text)
+@dp.message_handler(lambda msg: "Экзамен" in msg.text or "Емтихан" in msg.text)
 async def exam(msg: types.Message):
     uid = str(msg.from_user.id)
+    user = users[uid]
+    lang = user["lang"]
 
-    users[uid]["mode"] = "exam"
-    users[uid]["exam"] = {"q": 0, "errors": 0}
-    users[uid]["queue"] = random.sample(questions_db, min(20, len(questions_db)))
-    save()
+    # ❗ если уже в режиме — не даём перезапуск
+    if user.get("mode") == "exam":
+        await msg.answer("Экзамен уже запущен" if lang == "ru" else "Емтихан басталған")
+        return
 
-    await msg.answer("20 вопросов / 3 ошибки = провал")
+    user["mode"] = "exam"
+    user["exam"] = {"q": 0, "errors": 0}
+    user["used_questions"] = []
+
+    save_users()
+
+    await msg.answer("20 вопросов / 3 ошибки = провал" if lang == "ru"
+                     else "20 сұрақ / 3 қате = құлау")
+
     await send_question(msg)
 
 # ===== BACK =====
@@ -133,9 +148,11 @@ async def send_question(msg):
 
     if not available:
         await msg.answer("Вопросы закончились" if lang == "ru" else "Сұрақтар аяқталды")
-
+    
         user["mode"] = None
         user["used_questions"] = []
+        user["exam"] = {"q": 0, "errors": 0}
+    
         save_users()
         return
 
@@ -159,6 +176,8 @@ async def send_question(msg):
 async def answer(msg: types.Message):
     uid = str(msg.from_user.id)
     user = users.get(uid)
+    if user.get("mode") not in ["test", "exam"]:
+        return
 
     if user.get("mode") is None:
         return
