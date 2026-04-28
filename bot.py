@@ -223,20 +223,25 @@ async def deny(callback: types.CallbackQuery):
     await callback.answer("Отклонено")
 
 # ===== GIVE ACCESS =====
-kb = InlineKeyboardMarkup(row_width=2)
-kb.add(
-    InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
-    InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
-)
-kb.add(
-    InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}")
-)
+@dp.callback_query_handler(lambda c: c.data.startswith("give_"))
+async def give(callback: types.CallbackQuery):
+    data = callback.data.split("_")
+    days = int(data[1])
+    uid = data[2]
 
-    users[uid]["premium_until"] = (datetime.now()+timedelta(days=days)).isoformat()
+    users[uid]["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
     save_users()
 
-    await bot.send_message(uid, "🔥 Доступ открыт!")
+    await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
     await callback.answer("OK")
+
+# ===== DENY =====
+@dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
+async def deny(callback: types.CallbackQuery):
+    uid = callback.data.split("_")[1]
+
+    await bot.send_message(uid, "❌ Оплата отклонена")
+    await callback.answer("Отклонено")
 
 # ===== QUESTION =====
 async def send_question(message, u):
