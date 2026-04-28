@@ -24,6 +24,7 @@ try:
         users = json.load(f)
 except:
     users = {}
+    "user_questions": []
 
 def save():
     with open("users.json", "w") as f:
@@ -100,28 +101,42 @@ async def exam(msg: types.Message):
     await send_q(msg)
 
 # ===== SEND QUESTION =====
-async def send_q(msg):
+async def send_question(msg):
     uid = str(msg.from_user.id)
     user = users[uid]
     lang = user["lang"]
 
-    if not user["queue"]:
-        await msg.answer("Вопросы закончились")
+    await bot.send_chat_action(msg.chat.id, "typing")
+
+    used = user.get("used_questions", [])
+
+    available = [q for i, q in enumerate(questions_db) if i not in used]
+
+    if not available:
+        await msg.answer("Вопросы закончились" if lang == "ru" else "Сұрақтар аяқталды")
+        user["mode"] = None
+        user["used_questions"] = []
+        save_users()
         return
 
-    q = user["queue"].pop(0)
-    user["last"] = q
+    index = questions_db.index(random.choice(available))
+    q = questions_db[index]
+
+    user["used_questions"].append(index)
+    user["last_question"] = q
 
     if user["mode"] == "exam":
         user["exam"]["q"] += 1
 
-    text = (q["q_ru"] if lang == "ru" else q["q_kz"]) + "\n\n"
-    text += "\n".join(q["options_ru"] if lang == "ru" else q["options_kz"])
+    save_users()
 
-    if q["image"]:
-        await msg.answer_photo(q["image"], caption=text, reply_markup=answers_kb(lang))
-    else:
-        await msg.answer(text, reply_markup=answers_kb(lang))
+    question = q["q_kz"] if lang == "kz" else q["q_ru"]
+    options = q["options_kz"] if lang == "kz" else q["options_ru"]
+
+    await msg.answer(
+        f"{question}\n\n" + "\n".join(options),
+        reply_markup=get_answers_kb(lang)
+    )
 
 # ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A", "B", "C", "D"])
@@ -130,6 +145,8 @@ async def answer(msg: types.Message):
     user = users[uid]
     lang = user["lang"]
     q = user["last"]
+    if user.get("mode") is None:
+    return
 
     if msg.text == q["correct"]:
         user["stats"]["correct"] += 1
@@ -163,7 +180,9 @@ async def answer(msg: types.Message):
 @dp.message_handler(lambda m: "Статистика" in m.text)
 async def stats(msg: types.Message):
     uid = str(msg.from_user.id)
+    
     s = users[uid]["stats"]
+    users[uid]["used_questions"] = []
 
     await msg.answer(f"✅ {s['correct']} | ❌ {s['wrong']}")
 
