@@ -13,7 +13,7 @@ from openai import OpenAI
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-ADMIN_ID = 8398266271
+ADMIN_ID = 503301815
 KASPI = "4400430352720152"
 
 MODEL = "gpt-4o-mini"
