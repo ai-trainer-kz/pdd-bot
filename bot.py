@@ -1,17 +1,13 @@
 import os
 import logging
 import json
-import random
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 
 from openai import OpenAI
-from dotenv import load_dotenv
-
-load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -23,7 +19,6 @@ dp = Dispatcher(bot)
 
 DATA_FILE = "users.json"
 
-# ====== DATA ======
 def load_users():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -38,7 +33,6 @@ def save_users():
 users = load_users()
 FREE_LIMIT = 5
 
-# ====== PREMIUM ======
 def is_premium(user_id):
     user = users.get(user_id)
     if not user or not user.get("premium"):
@@ -57,62 +51,20 @@ def is_premium(user_id):
 
     return True
 
-# ====== KEYBOARDS ======
-lang_kb = ReplyKeyboardMarkup(resize_keyboard=True)
-lang_kb.add("🇷🇺 Русский", "🇰🇿 Қазақша")
+# ===== КНОПКИ =====
+main_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+main_kb.add("🚗 Тест ПДД", "📚 Обучение")
+main_kb.add("💰 Купить")
 
-def get_main_kb(lang):
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    if lang == "kz":
-        kb.add("🚗 Тест ПДД", "📚 Оқу", "🧠 Емтихан")
-        kb.add("📊 Статистика", "💰 Сатып алу")
-        kb.add("⬅️ Артқа")
-    else:
-        kb.add("🚗 Тест ПДД", "📚 Обучение", "🧠 Экзамен")
-        kb.add("📊 Статистика", "💰 Купить")
-        kb.add("⬅️ Назад")
-    return kb
-
-def get_back_kb(lang):
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("⬅️ Артқа" if lang == "kz" else "⬅️ Назад")
-    return kb
-
-def get_answers_kb(lang):
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("A", "B", "C", "D")
-    kb.add("⬅️ Артқа" if lang == "kz" else "⬅️ Назад")
-    return kb
+answers_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+answers_kb.add("A", "B", "C", "D")
+answers_kb.add("🛑 Стоп")
 
 pay_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="✅ Я оплатил / Төледім", callback_data="paid")]
+    [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")]
 ])
 
-# ====== QUESTIONS ======
-questions_db = [
-    {
-        "q_ru": "Какой знак запрещает движение?",
-        "q_kz": "Қай белгі қозғалысқа тыйым салады?",
-        "img": "images/znak1.jpg",
-        "correct": "C",
-        "options_ru": [
-            "A) Уступить дорогу",
-            "B) Стоянка запрещена",
-            "C) Движение запрещено",
-            "D) Ограничение скорости"
-        ],
-        "options_kz": [
-            "A) Жол беру",
-            "B) Тұраққа тыйым",
-            "C) Қозғалысқа тыйым",
-            "D) Жылдамдық шектеуі"
-        ],
-        "ex_ru": "Этот знак полностью запрещает движение.",
-        "ex_kz": "Бұл белгі қозғалысқа толық тыйым салады."
-    }
-]
-
-# ====== START ======
+# ===== START =====
 @dp.message_handler(commands=["start"])
 async def start(msg: types.Message):
     uid = str(msg.from_user.id)
@@ -120,151 +72,108 @@ async def start(msg: types.Message):
     users[uid] = users.get(uid, {
         "free_used": 0,
         "premium": False,
-        "expires": None,
-        "lang": None,
-        "mode": None,
-        "stats": {"correct": 0, "wrong": 0},
-        "exam": {"q": 0, "errors": 0}
+        "expires": None
     })
     save_users()
 
-    await msg.answer("Выбери язык / Тілді таңда:", reply_markup=lang_kb)
+    await msg.answer(
+        "🚗 Привет! Я AI-тренер по ПДД KZ\n\nВыбери режим 👇",
+        reply_markup=main_kb
+    )
 
-# ====== LANGUAGE ======
-@dp.message_handler(lambda msg: msg.text in ["🇷🇺 Русский", "🇰🇿 Қазақша"])
-async def set_lang(msg: types.Message):
-    uid = str(msg.from_user.id)
+# ===== КУПИТЬ =====
+@dp.message_handler(lambda msg: msg.text == "💰 Купить")
+async def buy(msg: types.Message):
+    await msg.answer(
+        "Полный доступ:\n7 дней — 5000 тг\n30 дней — 10000 тг\n\nПосле оплаты нажми кнопку ниже 👇",
+        reply_markup=pay_kb
+    )
 
-    users[uid]["lang"] = "ru" if "Русский" in msg.text else "kz"
-    save_users()
+@dp.callback_query_handler(lambda c: c.data == "paid")
+async def paid(callback: types.CallbackQuery):
+    await callback.message.answer("Отправь чек администратору")
+    await callback.answer()
 
-    text = "Выбери режим 👇" if users[uid]["lang"] == "ru" else "Таңдаңыз 👇"
-    await msg.answer(text, reply_markup=get_main_kb(users[uid]["lang"]))
-
-# ====== BACK ======
-@dp.message_handler(lambda msg: msg.text in ["⬅️ Назад", "⬅️ Артқа"])
-async def back(msg: types.Message):
-    uid = str(msg.from_user.id)
-    lang = users[uid]["lang"]
-
-    users[uid]["mode"] = None
-    save_users()
-
-    await msg.answer("Главное меню" if lang == "ru" else "Басты мәзір",
-                     reply_markup=get_main_kb(lang))
-
-# ====== STATISTICS ======
-@dp.message_handler(lambda msg: "Статистика" in msg.text)
-async def stats(msg: types.Message):
-    uid = str(msg.from_user.id)
-    user = users[uid]
-    lang = user["lang"]
-
-    c = user["stats"]["correct"]
-    w = user["stats"]["wrong"]
-    total = c + w
-
-    if lang == "kz":
-        text = f"📊 Статистика:\nДұрыс: {c}\nҚате: {w}\nБарлығы: {total}"
-    else:
-        text = f"📊 Статистика:\nПравильно: {c}\nОшибок: {w}\nВсего: {total}"
-
-    await msg.answer(text, reply_markup=get_back_kb(lang))
-
-# ====== TEST ======
-@dp.message_handler(lambda msg: "Тест ПДД" in msg.text)
+# ===== ТЕСТ =====
+@dp.message_handler(lambda msg: msg.text == "🚗 Тест ПДД")
 async def test(msg: types.Message):
-    uid = str(msg.from_user.id)
-    users[uid]["mode"] = "test"
-    save_users()
     await send_question(msg)
 
-# ====== EXAM ======
-@dp.message_handler(lambda msg: "Экзамен" in msg.text or "Емтихан" in msg.text)
-async def exam(msg: types.Message):
-    uid = str(msg.from_user.id)
-    lang = users[uid]["lang"]
+# ===== СТОП =====
+@dp.message_handler(lambda msg: msg.text == "🛑 Стоп")
+async def stop(msg: types.Message):
+    await msg.answer("Тест остановлен", reply_markup=main_kb)
 
-    users[uid]["mode"] = "exam"
-    users[uid]["exam"] = {"q": 0, "errors": 0}
-    save_users()
-
-    await msg.answer("Экзамен: 20 вопросов, 3 ошибки = провал" if lang == "ru"
-                     else "Емтихан: 20 сұрақ, 3 қате = құлау")
-
-    await send_question(msg)
-
-# ====== QUESTION ======
+# ===== ВОПРОС =====
 async def send_question(msg):
     uid = str(msg.from_user.id)
     user = users[uid]
-    lang = user["lang"]
 
-    await bot.send_chat_action(msg.chat.id, "typing")
+    if not is_premium(uid) and user["free_used"] >= FREE_LIMIT:
+        await msg.answer("Лимит закончился. Купи доступ")
+        return
 
-    q = random.choice(questions_db)
+    prompt = """
+Ты — экзаменатор ПДД Казахстана.
+
+Задай 1 вопрос как на экзамене.
+Формат:
+Вопрос
+A)
+B)
+C)
+D)
+
+НЕ пиши ответ
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    q = response.choices[0].message.content
+
     user["last_question"] = q
 
-    if user["mode"] == "exam":
-        user["exam"]["q"] += 1
+    if not is_premium(uid):
+        user["free_used"] += 1
 
     save_users()
 
-    question = q["q_kz"] if lang == "kz" else q["q_ru"]
-    options = q["options_kz"] if lang == "kz" else q["options_ru"]
+    await msg.answer(q, reply_markup=answers_kb)
 
-    text = f"{question}\n\n" + "\n".join(options)
-
-    try:
-        await msg.answer_photo(
-            photo=open(q["img"], "rb"),
-            caption=text,
-            reply_markup=get_answers_kb(lang)
-        )
-    except:
-        await msg.answer(text, reply_markup=get_answers_kb(lang))
-
-# ====== ANSWER ======
+# ===== ОТВЕТ =====
 @dp.message_handler(lambda msg: msg.text in ["A", "B", "C", "D"])
 async def answer(msg: types.Message):
     uid = str(msg.from_user.id)
-    user = users[uid]
-    lang = user["lang"]
+    user = users.get(uid)
 
-    await bot.send_chat_action(msg.chat.id, "typing")
+    if "last_question" not in user:
+        return
 
-    q = user["last_question"]
-    correct = q["correct"]
+    prompt = f"""
+Вопрос:
+{user['last_question']}
 
-    if msg.text == correct:
-        user["stats"]["correct"] += 1
-        text = "✅ Дұрыс!" if lang == "kz" else "✅ Правильно!"
-    else:
-        user["stats"]["wrong"] += 1
-        text = f"❌ Дұрыс жауап: {correct}" if lang == "kz" else f"❌ Ответ: {correct}"
+Ответ пользователя: {msg.text}
 
-        if user["mode"] == "exam":
-            user["exam"]["errors"] += 1
+Скажи:
+1. Правильно или нет
+2. Короткое объяснение
+"""
 
-    await msg.answer(text)
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
 
-    # ===== экзамен логика =====
-    if user["mode"] == "exam":
-        if user["exam"]["errors"] >= 3:
-            await msg.answer("❌ Провал" if lang == "ru" else "❌ Құладың")
-            user["mode"] = None
-            save_users()
-            return
+    res = response.choices[0].message.content
 
-        if user["exam"]["q"] >= 20:
-            await msg.answer("🎉 Сдал!" if lang == "ru" else "🎉 Өттің!")
-            user["mode"] = None
-            save_users()
-            return
+    await msg.answer(res)
 
-    save_users()
     await send_question(msg)
 
-# ====== RUN ======
+# ===== ЗАПУСК =====
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
