@@ -157,16 +157,33 @@ async def buy(message: types.Message):
 
     await message.answer("💰 Выбери тариф:", reply_markup=kb)
 
-@dp.message_handler(lambda m: "дней" in m.text)
+@dp.message_handler(lambda m: m.text in ["7 дней — 5000₸", "30 дней — 10000₸"])
 async def plan(message: types.Message):
     u = users[str(message.from_user.id)]
 
-    u["plan"] = 7 if "7" in message.text else 30
+    if "7" in message.text:
+        u["plan"] = 7
+    else:
+        u["plan"] = 30
+
     save_users()
 
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("📸 Я оплатил")
+    kb.add("⬅️ Назад")
+
     await message.answer(
-        f"💳 Kaspi: {KASPI}\n📦 {u['plan']} дней\n📸 Отправь чек"
+        f"💳 Kaspi: {KASPI}\n\n"
+        f"📦 Тариф: {u['plan']} дней\n\n"
+        "1️⃣ Оплати\n"
+        "2️⃣ Нажми «Я оплатил»\n"
+        "3️⃣ Отправь чек",
+        reply_markup=kb
     )
+
+@dp.message_handler(lambda m: m.text == "📸 Я оплатил")
+async def paid(message: types.Message):
+    await message.answer("📤 Отправь чек (скрин оплаты)")
 
 # ===== PHOTO =====
 @dp.message_handler(content_types=types.ContentType.PHOTO)
@@ -174,32 +191,21 @@ async def receipt(message: types.Message):
     user = message.from_user
     u = users[str(user.id)]
 
-    kb = InlineKeyboardMarkup(row_width=2)
+    kb = InlineKeyboardMarkup()
     kb.add(
-        InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
-        InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
+        InlineKeyboardButton("✅ 7 дней", callback_data=f"give_7_{user.id}"),
+        InlineKeyboardButton("✅ 30 дней", callback_data=f"give_30_{user.id}")
     )
     kb.add(
         InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}")
     )
 
-    try:
-        await bot.send_photo(
-            ADMIN_ID,
-            message.photo[-1].file_id,
-            caption=(
-                f"💰 Оплата\n"
-                f"👤 ID: {user.id}\n"
-                f"📦 Выбрал: {u.get('plan')} дней"
-            ),
-            reply_markup=kb
-        )
-        print("SUCCESS SEND TO ADMIN")
-
-    except Exception as e:
-        print("ERROR:", e)
-        await message.answer("❌ Ошибка отправки админу")
-        return
+    await bot.send_photo(
+        ADMIN_ID,
+        message.photo[-1].file_id,
+        caption=f"💰 Оплата\nID: {user.id}\nТариф: {u.get('plan')} дней",
+        reply_markup=kb
+    )
 
     await message.answer("⏳ Чек отправлен на проверку")
 
