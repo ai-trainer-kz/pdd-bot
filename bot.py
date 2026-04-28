@@ -164,9 +164,9 @@ async def buy(message: types.Message):
     u = users[str(message.from_user.id)]
 
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🟢 7 дней")
-    kb.add("🔵 30 дней")
-    kb.add("🔴 90 дней")
+    kb.add("🟢 7 дней — 2000₸   (заход)
+    kb.add("🔵 30 дней — 7000₸  (основной)
+    kb.add("🔴 90 дней — 15000₸ (выгодный)
     kb.add(t(u,"⬅️ Назад","⬅️ Артқа"))
 
     await message.answer("Тариф:", reply_markup=kb)
@@ -181,7 +181,11 @@ async def plan(message: types.Message):
 
     save_users()
 
-    await message.answer(f"Kaspi: {KASPI}\nОтправь чек", reply_markup=pay_kb(u))
+    await message.answer(
+        f"💳 Kaspi: {KASPI}\n\n"
+        f"📦 Тариф: {u['plan']} дней\n\n"
+        f"После оплаты нажми '💰 Оплатил' и отправь чек"
+    ) 
 
 @dp.message_handler(lambda m: "Оплатил" in m.text or "Төледім" in m.text)
 async def paid(message: types.Message):
@@ -195,15 +199,36 @@ async def paid(message: types.Message):
 
 @dp.message_handler(content_types=types.ContentType.PHOTO)
 async def receipt(message: types.Message):
+    user = message.from_user
+    u = users[str(user.id)]
+
+    plan = u.get("plan", "не выбран")
+
+    text = (
+        f"💰 ОПЛАТА\n\n"
+        f"👤 ID: {user.id}\n"
+        f"👤 Username: @{user.username}\n"
+        f"📦 Тариф: {plan} дней\n"
+    )
+
     await bot.send_photo(
         ADMIN_ID,
         message.photo[-1].file_id,
-        caption=f"user {message.from_user.id}",
+        caption=text,
         reply_markup=InlineKeyboardMarkup().add(
-            InlineKeyboardButton("OK", callback_data=f"give_{message.from_user.id}")
+            InlineKeyboardButton("✅ Выдать доступ", callback_data=f"give_{user.id}"),
+            InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}")
         )
     )
-    await message.answer("⏳ Проверка")
+
+    await message.answer("⏳ Чек отправлен на проверку")
+
+@dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
+async def deny(callback: types.CallbackQuery):
+    uid = callback.data.split("_")[1]
+
+    await bot.send_message(uid, "❌ Оплата не подтверждена")
+    await callback.answer("Отказано")
 
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give(callback: types.CallbackQuery):
