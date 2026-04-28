@@ -178,7 +178,7 @@ async def plan(message: types.Message):
     save_users()
 
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("📸 Я оплатил")
+    kb.add("✅ Я оплатил")
     kb.add("⬅️ Назад")
 
     await message.answer(
@@ -188,52 +188,55 @@ async def plan(message: types.Message):
         reply_markup=kb
     )
 
-@dp.message_handler(lambda m: m.text == "📸 Я оплатил")
+@dp.message_handler(lambda m: m.text == "✅ Я оплатил")
 async def paid(message: types.Message):
-    await message.answer("📤 Отправь чек (фото)")
-
-# ===== PHOTO (FIXED 🔥) =====
-@dp.message_handler(content_types=["photo"])
-async def handle_payment_check(message: types.Message):
     user = message.from_user
+    u = users.get(str(user.id), {})
+
+    # кнопки для админа
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
+        InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
+    )
+    kb.add(
+        InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}")
+    )
 
     try:
-        photo = message.photo[-1].file_id
-
-        await bot.send_photo(
+        await bot.send_message(
             ADMIN_ID,
-            photo,
-            caption=(
-                f"💰 ОПЛАТА\n"
-                f"👤 @{user.username}\n"
-                f"🆔 ID: {user.id}\n"
-            )
+            f"💰 ОПЛАТА\n"
+            f"👤 @{user.username}\n"
+            f"🆔 ID: {user.id}\n"
+            f"📦 Тариф: {u.get('plan', 'не выбран')} дней",
+            reply_markup=kb
         )
 
-        await message.answer("✅ Чек отправлен админу на проверку")
+        await message.answer("✅ Отправлено админу на проверку")
 
     except Exception as e:
-        print("ERROR SEND ADMIN:", e)
-        await message.answer("❌ Ошибка отправки. Напиши админу")
+        print("ERROR ADMIN:", e)
+        await message.answer("❌ Ошибка отправки админу")
 # ===== CALLBACK =====
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give(callback: types.CallbackQuery):
-    _, days, uid = callback.data.split("_")
-    days = int(days)
+    data = callback.data.split("_")
+    days = int(data[1])
+    uid = data[2]
 
     users[uid]["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
     save_users()
 
     await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
-    await callback.answer("OK")
-
+    await callback.answer("Доступ выдан")
+    
 @dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
 async def deny(callback: types.CallbackQuery):
     uid = callback.data.split("_")[1]
 
     await bot.send_message(uid, "❌ Оплата отклонена")
     await callback.answer("Отклонено")
-
 # ===== QUESTION =====
 async def send_question(message, u):
     if not has_access(u):
