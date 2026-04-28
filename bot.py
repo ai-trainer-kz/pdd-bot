@@ -193,30 +193,28 @@ async def paid(message: types.Message):
     await message.answer("📤 Отправь чек (фото)")
 
 # ===== PHOTO (FIXED 🔥) =====
-@dp.message_handler(content_types=types.ContentType.PHOTO)
-async def receipt(message: types.Message):
+@dp.message_handler(content_types=["photo"])
+async def handle_payment_check(message: types.Message):
     user = message.from_user
-    uid = str(user.id)
-    u = users.get(uid)
 
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("✅ 7 дней", callback_data=f"give_7_{uid}"),
-        InlineKeyboardButton("✅ 30 дней", callback_data=f"give_30_{uid}")
-    )
-    kb.add(
-        InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{uid}")
-    )
+    try:
+        photo = message.photo[-1].file_id
 
-    await bot.send_photo(
-        ADMIN_ID,
-        message.photo[-1].file_id,
-        caption=f"💰 Оплата\nID: {uid}\nТариф: {u['plan']} дней",
-        reply_markup=kb
-    )
+        await bot.send_photo(
+            ADMIN_ID,
+            photo,
+            caption=(
+                f"💰 ОПЛАТА\n"
+                f"👤 @{user.username}\n"
+                f"🆔 ID: {user.id}\n"
+            )
+        )
 
-    await message.answer("⏳ Чек отправлен админу")
+        await message.answer("✅ Чек отправлен админу на проверку")
 
+    except Exception as e:
+        print("ERROR SEND ADMIN:", e)
+        await message.answer("❌ Ошибка отправки. Напиши админу")
 # ===== CALLBACK =====
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give(callback: types.CallbackQuery):
