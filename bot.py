@@ -2,29 +2,28 @@ import os
 import logging
 import json
 from datetime import datetime, timedelta
-import re
+import random
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
-from openai import OpenAI
 
 # ===== CONFIG =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 ADMIN_ID = 8398266271
 KASPI = "4400430352720152"
 
-MODEL = "gpt-4o-mini"
-
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
-client = OpenAI(api_key=OPENAI_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
 users = {}
+
+# ===== LOAD QUESTIONS =====
+with open("questions.json", "r", encoding="utf-8") as f:
+    QUESTIONS = json.load(f)
 
 # ===== SAVE =====
 def save_users():
@@ -79,35 +78,15 @@ def answer_kb():
     kb.add("⬅️ Назад")
     return kb
 
-# ===== GPT =====
-def ask_gpt():
-    prompt = """
-Сделай экзаменационный вопрос ПДД Казахстан.
+# ===== QUESTIONS =====
+def get_question():
+    q = random.choice(QUESTIONS)
 
-Формат:
-Вопрос:
-...
+    text = f"Вопрос:\n{q['q_ru']}\n\n"
+    for opt in q["options_ru"]:
+        text += opt + "\n"
 
-A) ...
-B) ...
-C) ...
-D) ...
-
-Правильный ответ: A
-Объяснение: кратко
-"""
-
-    r = client.chat.completions.create(
-        model=MODEL,
-        messages=[{"role":"user","content":prompt}]
-    )
-
-    text = r.choices[0].message.content
-
-    ans = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
-    exp = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
-
-    return text, ans.group(1) if ans else "A", exp.group(1).strip() if exp else ""
+    return text, q["correct"], q["ex_ru"]
 
 # ===== START =====
 @dp.message_handler(commands=['start'])
@@ -129,10 +108,6 @@ async def train(message: types.Message):
     u = users[str(message.from_user.id)]
     u["mode"] = "train"
 
-    if not has_access(u):
-        await message.answer("🔒 Купи доступ", reply_markup=main_kb())
-        return
-
     await send_question(message, u)
 
 @dp.message_handler(lambda m: m.text == "🧠 Экзамен")
@@ -146,7 +121,7 @@ async def exam(message: types.Message):
     await send_question(message, u)
 
 # ===== BUY =====
-@dp.message_handler(lambda m: "Купить" in m.text)
+@dp.message_handler(lambda m: m.text == "💳 Купить доступ")
 async def buy(message: types.Message):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("7 дней — 5000₸")
@@ -235,15 +210,12 @@ async def send_question(message, u):
     if not u["premium_until"]:
         u["used_free"] += 1
 
-    text, ans, exp = ask_gpt()
-
-    clean = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
-    clean = re.sub(r"Объяснение.*", "", clean, flags=re.S)
+    text, ans, exp = get_question()
 
     u["correct_answer"] = ans
     u["explanation"] = exp
 
-    await message.answer(clean, reply_markup=answer_kb())
+    await message.answer(text, reply_markup=answer_kb())
     save_users()
 
 # ===== ANSWER =====
@@ -261,7 +233,7 @@ async def answer(message: types.Message):
         await message.answer(f"❌ Неверно\nОтвет: {u['correct_answer']}")
 
     if u["explanation"]:
-        await message.answer(f"📘 {u['explanation'][:200]}")
+        await message.answer(f"📘 {u['explanation']}")
 
     if u["mode"] == "exam":
         u["exam_count"] += 1
@@ -270,8 +242,11 @@ async def answer(message: types.Message):
             status = "✅ СДАЛ" if percent >= 80 else "❌ НЕ СДАЛ"
 
             await message.answer(
-                f"📊 Результат:\n{u['exam_correct']}/20\n{percent}%\n{status}"
+                f"📊 Результат:\n{u['exam_correct']}/20\n{percent}%\n{status}",
+                reply_markup=main_kb()
             )
+            u["mode"] = None
+            save_users()
             return
 
     save_users()
