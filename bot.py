@@ -161,7 +161,7 @@ async def answer(msg: types.Message):
     user = users.get(uid)
 
     if user.get("mode") is None:
-    return
+        return
 
     if not user or user.get("mode") is None:
         return
