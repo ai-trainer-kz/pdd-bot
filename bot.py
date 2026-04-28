@@ -259,7 +259,7 @@ async def paid(message: types.Message):
 # ===== CALLBACK =====
 @dp.callback_query_handler(lambda c: c.data.startswith("give_7_"))
 async def give_7(callback: types.CallbackQuery):
-    user_id = c.data.split("_")[2]
+    user_id = callback.data.split("_")[2]
 
     u = users.get(user_id, {})
     u["status"] = "active"
