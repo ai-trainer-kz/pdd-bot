@@ -39,6 +39,32 @@ def load_users():
     except:
         users = {}
 
+# ===== USER =====
+def ensure_user(uid):
+    uid = str(uid)
+    if uid not in users:
+        users[uid] = {
+            "step": "menu",
+            "lang": "ru",
+            "mode": None,
+            "topic": None,
+            "level": None,
+            "correct": 0,
+            "wrong": 0,
+            "total_correct": 0,
+            "total_wrong": 0,
+            "exam_q": 0,
+            "premium_until": None,
+            "correct_answer": None
+        }
+        save_users()
+
+def has_access(u):
+    try:
+        return u["premium_until"] and datetime.now() < datetime.fromisoformat(u["premium_until"])
+    except:
+        return False
+
 # ===== UI =====
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -78,44 +104,19 @@ def pay_kb():
     kb.add("⬅️ Назад")
     return kb
 
-# ===== USER =====
-def ensure_user(uid):
-    uid = str(uid)
-    if uid not in users:
-        users[uid] = {
-            "step": "menu",
-            "lang": "ru",
-            "mode": None,
-            "topic": None,
-            "level": None,
-            "correct": 0,
-            "wrong": 0,
-            "total_correct": 0,
-            "total_wrong": 0,
-            "exam_q": 0,
-            "premium_until": None,
-            "correct_answer": None
-        }
-        save_users()
-
-def has_access(u):
-    return u["premium_until"] and datetime.now() < datetime.fromisoformat(u["premium_until"])
-
 # ===== GPT =====
 def system_prompt(u):
     lang = "на русском" if u["lang"] == "ru" else "қазақ тілінде"
 
     return f"""
-Ты автоинструктор по ПДД. Отвечай {lang}.
+Ты строгий экзаменатор ПДД. Отвечай {lang}.
 
 Тема: {u['topic']}
 Уровень: {u['level']}
 
-Сделай 1 вопрос.
+Сделай 1 качественный вопрос как на экзамене.
 
-Добавь описание ситуации для картинки.
-
-Формат:
+Формат строго:
 
 Ситуация:
 ...
@@ -132,24 +133,30 @@ D) ...
 A
 """
 
-def ask_gpt(u, text="Новый вопрос"):
-    resp = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt(u)},
-            {"role": "user", "content": text}
-        ]
-    )
-    return resp.choices[0].message.content
+def ask_gpt(u):
+    try:
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt(u)},
+                {"role": "user", "content": "Сгенерируй вопрос"}
+            ]
+        )
+        return resp.choices[0].message.content
+    except Exception as e:
+        return "Ошибка генерации вопроса, попробуй снова."
 
 # ===== IMAGE =====
 def generate_image(prompt):
-    img = client.images.generate(
-        model="gpt-image-1",
-        prompt=prompt,
-        size="1024x1024"
-    )
-    return img.data[0].url
+    try:
+        img = client.images.generate(
+            model="gpt-image-1",
+            prompt=prompt,
+            size="1024x1024"
+        )
+        return img.data[0].url
+    except:
+        return None
 
 # ===== START =====
 @dp.message_handler(commands=['start'])
@@ -167,12 +174,15 @@ async def set_lang(message: types.Message):
     u = users[str(message.from_user.id)]
     u["lang"] = "ru" if "Рус" in message.text else "kz"
     save_users()
-    await message.answer("Готово", reply_markup=main_kb())
+    await message.answer("✅ Язык обновлен", reply_markup=main_kb())
 
 # ===== BUY =====
 @dp.message_handler(lambda m: m.text == "💳 Купить доступ")
 async def buy(message: types.Message):
-    await message.answer(f"Kaspi: {KASPI}\nОтправь чек", reply_markup=pay_kb())
+    await message.answer(
+        f"💳 Оплата Kaspi\n{KASPI}\n\nПосле оплаты отправь чек",
+        reply_markup=pay_kb()
+    )
 
 @dp.message_handler(content_types=types.ContentType.PHOTO)
 async def handle_receipt(message: types.Message):
@@ -181,10 +191,10 @@ async def handle_receipt(message: types.Message):
         message.photo[-1].file_id,
         caption=f"Оплата от {message.from_user.id}",
         reply_markup=InlineKeyboardMarkup().add(
-            InlineKeyboardButton("Выдать 30 дней", callback_data=f"give_{message.from_user.id}")
+            InlineKeyboardButton("Выдать доступ", callback_data=f"give_{message.from_user.id}")
         )
     )
-    await message.answer("Чек отправлен, ожидай")
+    await message.answer("⏳ Чек отправлен на проверку")
 
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give_access(callback: types.CallbackQuery):
@@ -193,8 +203,8 @@ async def give_access(callback: types.CallbackQuery):
     users[user_id]["premium_until"] = (datetime.now() + timedelta(days=30)).isoformat()
     save_users()
 
-    await bot.send_message(user_id, "✅ Доступ открыт на 30 дней")
-    await callback.answer("Готово")
+    await bot.send_message(user_id, "🔥 Доступ активирован на 30 дней")
+    await callback.answer("OK")
 
 # ===== MODE =====
 @dp.message_handler(lambda m: m.text in ["🎯 Тренировка","🧠 Экзамен"])
@@ -202,12 +212,13 @@ async def mode(message: types.Message):
     u = users[str(message.from_user.id)]
 
     if not has_access(u):
-        await message.answer("❌ Купи доступ", reply_markup=pay_kb())
+        await message.answer("❌ Нужен доступ", reply_markup=pay_kb())
         return
 
     u["mode"] = message.text
     u["step"] = "topic"
     save_users()
+
     await message.answer("Выбери тему:", reply_markup=topic_kb())
 
 # ===== TOPIC =====
@@ -217,17 +228,21 @@ async def topic(message: types.Message):
     u["topic"] = message.text
     u["step"] = "level"
     save_users()
+
     await message.answer("Выбери уровень:", reply_markup=level_kb())
 
 # ===== LEVEL =====
 @dp.message_handler(lambda m: m.text in ["🟢 Легкий","🟡 Средний","🔴 Сложный"])
 async def level(message: types.Message):
     u = users[str(message.from_user.id)]
+
     u["level"] = message.text
     u["correct"] = 0
     u["wrong"] = 0
     u["exam_q"] = 0
     u["step"] = "test"
+
+    save_users()
 
     await send_question(message, u)
 
@@ -241,24 +256,30 @@ async def send_question(message, u):
 
     clean = re.sub(r"Правильный ответ[:\s]*[ABCD]", "", text)
 
-    # генерация картинки
     img_url = generate_image(clean[:300])
 
-    await bot.send_photo(message.chat.id, img_url, caption=clean, reply_markup=answer_kb())
+    if img_url:
+        await bot.send_photo(message.chat.id, img_url, caption=clean, reply_markup=answer_kb())
+    else:
+        await message.answer(clean, reply_markup=answer_kb())
 
 # ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A","B","C","D"])
 async def answer(message: types.Message):
     u = users[str(message.from_user.id)]
 
+    if not u.get("correct_answer"):
+        await message.answer("Ошибка, начни заново")
+        return
+
     if message.text == u["correct_answer"]:
         u["correct"] += 1
         u["total_correct"] += 1
-        res = "✅"
+        res = "✅ Верно"
     else:
         u["wrong"] += 1
         u["total_wrong"] += 1
-        res = f"❌ ({u['correct_answer']})"
+        res = f"❌ Неверно. Ответ: {u['correct_answer']}"
 
     await message.answer(res)
 
@@ -266,22 +287,23 @@ async def answer(message: types.Message):
         u["exam_q"] += 1
         if u["exam_q"] >= 20:
             await message.answer(
-                f"🏁 Экзамен завершен\n"
-                f"Правильно: {u['correct']}\n"
-                f"Ошибки: {u['wrong']}"
+                f"🏁 Экзамен завершен\n\n"
+                f"✅ {u['correct']}\n❌ {u['wrong']}"
             )
             u["step"] = "menu"
             save_users()
             return
 
+    save_users()
     await send_question(message, u)
 
 # ===== STATS =====
 @dp.message_handler(lambda m: m.text == "📊 Статистика")
 async def stats(message: types.Message):
     u = users[str(message.from_user.id)]
+
     await message.answer(
-        f"📊 Общая статистика:\n\n"
+        f"📊 Статистика:\n\n"
         f"✅ Правильно: {u['total_correct']}\n"
         f"❌ Ошибки: {u['total_wrong']}"
     )
