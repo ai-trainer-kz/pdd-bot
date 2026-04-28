@@ -131,6 +131,36 @@ D) ...
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
 
+    ensure_user(
+        message.from_user.id,
+        message.from_user.language_code
+    )
+
+    u = users[str(message.from_user.id)]
+
+    # авто-язык
+    lang_code = message.from_user.language_code or ""
+    if "ru" in lang_code:
+        u["lang"] = "ru"
+    else:
+        u["lang"] = "kz"
+
+    save_users()
+
+    await message.answer(
+        "🌐 Язык: Русский" if u["lang"] == "ru" else "🌐 Тіл: Қазақша"
+    )
+
+    await message.answer(
+        t(u,
+          "🚗 Подготовка к ПДД\n\n"
+          "👇 Выбери режим:",
+          "🚗 ПДД дайындық\n\n"
+          "👇 Режимді таңда:"
+        ),
+        reply_markup=main_kb(u)
+    )
+
 @dp.message_handler(lambda m: "Язык" in m.text or "Тіл" in m.text)
 async def lang(message: types.Message):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -152,45 +182,7 @@ async def set_lang(message: types.Message):
     save_users()
 
     await message.answer("✅", reply_markup=main_kb(u))
-
-    ensure_user(
-        message.from_user.id,
-        message.from_user.language_code
-    )
-
-    u = users[str(message.from_user.id)]
-
-    # авто-язык
-    lang_code = message.from_user.language_code or ""
-
-    if "ru" in lang_code:
-        u["lang"] = "ru"
-    else:
-        u["lang"] = "kz"
     
-    save_users()
-
-    await message.answer(
-        "🌐 Язык: Русский" if u["lang"] == "ru" else "🌐 Тіл: Қазақша"
-    )
-
-    await message.answer(
-        t(u,
-          "🚗 Подготовка к ПДД\n\n"
-          "🎁 5 бесплатных вопросов\n"
-          "📊 Проверь свой уровень\n"
-          "🚀 Сдай экзамен с первого раза\n\n"
-          "👇 Выбери режим:",
-          
-          "🚗 ПДД дайындық\n\n"
-          "🎁 5 тегін сұрақ\n"
-          "📊 Деңгейіңді тексер\n"
-          "🚀 Бірінші реттен тапсыр\n\n"
-          "👇 Режимді таңда:"
-        ),
-        reply_markup=main_kb(u)
-    )
-
 # ===== MODE =====
 @dp.message_handler(lambda m: "Тренировка" in m.text or "Жаттығу" in m.text)
 async def train(message: types.Message):
