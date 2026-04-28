@@ -302,8 +302,8 @@ async def receipt(message: types.Message):
     print("PHOTO RECEIVED FROM USER:", user.id)
     print("TRY SEND TO ADMIN:", ADMIN_ID)
 
-    try:
-        await bot.send_photo(
+try:
+    await bot.send_photo(
             ADMIN_ID,
             message.photo[-1].file_id,
             caption=f"💰 Оплата\nID: {user.id}\nТариф: {u.get('plan')}",
@@ -311,8 +311,10 @@ async def receipt(message: types.Message):
                 InlineKeyboardButton("✅ Дать доступ", callback_data=f"give_{user.id}")
             )
         )
-    except Exception as e:
-        print("ERROR:", e)
+        print("SUCCESS SEND TO ADMIN")
+    
+except Exception as e:
+    print("ERROR SENDING:", e)
 
     await message.answer("⏳ Чек отправлен на проверку")
     
@@ -337,9 +339,13 @@ async def send_question(message, u):
         u["used_free"] += 1
 
     text, ans, exp = ask_gpt(u)
+    question_only = re.split(r"(Правильный ответ|Дұрыс жауап)", text)[0]
 
-    u["correct_answer"] = ans
-    u["explanation"] = exp
+    await message.answer(question_only)
+    
+    u["current_answer"] = ans
+    u["current_exp"] = exp
+    save_users()
 
     clean = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
     clean = re.sub(r"Объяснение.*", "", clean, flags=re.S)
