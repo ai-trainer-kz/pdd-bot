@@ -24,6 +24,7 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
+# ===== USERS =====
 users = {}
 last_questions = {}
 
@@ -40,11 +41,6 @@ def load_users():
     except:
         users = {}
 
-# ===== LOG PAYMENTS =====
-def log_payment(user_id, plan):
-    with open("payments.log", "a", encoding="utf-8") as f:
-        f.write(f"{datetime.now()} | {user_id} | {plan}\n")
-
 # ===== USER =====
 def ensure_user(uid):
     uid = str(uid)
@@ -57,13 +53,16 @@ def ensure_user(uid):
             "used_free": 0,
             "premium_until": None,
             "plan": None,
-            "status": None,  # NEW
             "correct": 0,
             "wrong": 0,
             "exam_count": 0,
             "exam_correct": 0
         }
         save_users()
+
+def get_user(uid):
+    ensure_user(uid)
+    return users[str(uid)]
 
 def has_access(u):
     try:
@@ -93,9 +92,11 @@ def ask_gpt(uid):
 
 Сгенерируй 1 НОВЫЙ вопрос.
 
-Формат:
+Ответ строго в формате:
+
 Вопрос:
 ...
+
 A) ...
 B) ...
 C) ...
@@ -129,17 +130,7 @@ D) ...
 # ===== START =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
-    ensure_user(message.from_user.id)
-
-    u = users[str(message.from_user.id)]
-
-    # если уже оплатил — восстановим доступ
-    if u.get("premium_until"):
-        try:
-            if datetime.now() < datetime.fromisoformat(u["premium_until"]):
-                await message.answer("🔥 У тебя уже есть доступ!")
-        except:
-            pass
+    u = get_user(message.from_user.id)
 
     await message.answer(
         "🚗 Подготовка к ПДД\n\n"
@@ -149,6 +140,32 @@ async def start(message: types.Message):
         "👇 Выбери режим:",
         reply_markup=main_kb()
     )
+
+# ===== TRAIN =====
+@dp.message_handler(lambda m: m.text == "🎯 Тренировка")
+async def train(message: types.Message):
+    u = get_user(message.from_user.id)
+    u["mode"] = "train"
+    save_users()
+
+    if not has_access(u):
+        await message.answer("🔒 Купи доступ", reply_markup=main_kb())
+        return
+
+    await send_question(message, u)
+
+# ===== EXAM =====
+@dp.message_handler(lambda m: m.text == "🧠 Экзамен")
+async def exam(message: types.Message):
+    u = get_user(message.from_user.id)
+
+    u["mode"] = "exam"
+    u["exam_count"] = 0
+    u["exam_correct"] = 0
+    save_users()
+
+    await message.answer("🧠 Экзамен: 20 вопросов")
+    await send_question(message, u)
 
 # ===== BUY =====
 @dp.message_handler(lambda m: "Купить" in m.text)
@@ -163,7 +180,7 @@ async def buy(message: types.Message):
 # ===== PLAN =====
 @dp.message_handler(lambda m: m.text in ["7 дней — 5000₸", "30 дней — 10000₸"])
 async def plan(message: types.Message):
-    u = users[str(message.from_user.id)]
+    u = get_user(message.from_user.id)
 
     u["plan"] = 7 if "7" in message.text else 30
     save_users()
@@ -172,23 +189,13 @@ async def plan(message: types.Message):
     kb.add("✅ Я оплатил")
     kb.add("⬅️ Назад")
 
-    await message.answer(
-        f"💳 Kaspi: {KASPI}\n\n"
-        f"📦 Тариф: {u['plan']} дней\n\n"
-        "1️⃣ Оплати\n2️⃣ Нажми «Я оплатил»",
-        reply_markup=kb
-    )
+    await message.answer(f"💳 Kaspi: {KASPI}\n📦 {u['plan']} дней", reply_markup=kb)
 
 # ===== PAYMENT =====
 @dp.message_handler(lambda m: m.text == "✅ Я оплатил")
 async def paid(message: types.Message):
     user = message.from_user
-    u = users.get(str(user.id), {})
-
-    u["status"] = "pending"
-    save_users()
-
-    log_payment(user.id, u.get("plan"))
+    u = get_user(user.id)
 
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -197,45 +204,60 @@ async def paid(message: types.Message):
     )
     kb.add(InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}"))
 
-    now = datetime.now()
-
     await bot.send_message(
         ADMIN_ID,
-        f"📅 {now.strftime('%d.%m.%Y')}\n"
-        f"⏰ {now.strftime('%H:%M')}\n\n"
-        f"💰 ОПЛАТА\n\n"
-        f"👤 @{user.username or 'нет'}\n"
-        f"🆔 ID: {user.id}\n"
-        f"📦 Тариф: {u.get('plan')}",
+        f"💰 ОПЛАТА\nID: {user.id}\nТариф: {u.get('plan')}",
         reply_markup=kb
     )
 
     await message.answer("✅ Отправлено админу")
 
-# ===== GIVE ACCESS =====
+# ===== GIVE =====
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give(callback: types.CallbackQuery):
     data = callback.data.split("_")
     days = int(data[1])
     uid = data[2]
 
-    users[uid]["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
-    users[uid]["status"] = "active"
+    u = get_user(uid)
+
+    u["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
     save_users()
 
     await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
     await callback.answer("OK")
 
-# ===== DENY =====
-@dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
-async def deny(callback: types.CallbackQuery):
-    uid = callback.data.split("_")[1]
+# ===== QUESTION =====
+async def send_question(message, u):
+    if not has_access(u):
+        await message.answer("🔒 Купи доступ", reply_markup=main_kb())
+        return
 
-    users[uid]["status"] = "denied"
+    if not u["premium_until"]:
+        u["used_free"] += 1
+
+    text, ans, exp = ask_gpt(message.from_user.id)
+
+    u["correct_answer"] = ans
+    u["explanation"] = exp
+
+    await message.answer(text, reply_markup=answer_kb())
     save_users()
 
-    await bot.send_message(uid, "❌ Оплата отклонена")
-    await callback.answer("OK")
+# ===== ANSWER =====
+@dp.message_handler(lambda m: m.text in ["A","B","C","D"])
+async def answer(message: types.Message):
+    u = get_user(message.from_user.id)
+
+    if message.text == u["correct_answer"]:
+        u["correct"] += 1
+        await message.answer("✅ Верно")
+    else:
+        u["wrong"] += 1
+        await message.answer(f"❌ Неверно\nОтвет: {u['correct_answer']}")
+
+    save_users()
+    await send_question(message, u)
 
 # ===== RUN =====
 if __name__ == "__main__":
