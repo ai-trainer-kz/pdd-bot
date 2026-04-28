@@ -164,9 +164,9 @@ async def buy(message: types.Message):
     u = users[str(message.from_user.id)]
 
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🟢 7 дней — 2000₸   (заход)
-    kb.add("🔵 30 дней — 7000₸  (основной)
-    kb.add("🔴 90 дней — 15000₸ (выгодный)
+    kb.add("🟢 7 дней — 2000₸   
+    kb.add("🔵 30 дней — 7000₸  
+    kb.add("🔴 90 дней — 15000₸ 
     kb.add(t(u,"⬅️ Назад","⬅️ Артқа"))
 
     await message.answer("Тариф:", reply_markup=kb)
