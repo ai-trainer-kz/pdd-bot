@@ -257,28 +257,43 @@ async def paid(message: types.Message):
         await message.answer("❌ Ошибка отправки админу")
 
 # ===== CALLBACK =====
-@dp.callback_query_handler(lambda c: c.data.startswith("give_"))
-async def give_access(callback: types.CallbackQuery):
-    data = callback.data.split("_")
-    days = int(data[1])
-    user_id = data[2]
+@dp.callback_query_handler(lambda c: c.data.startswith("give_7_"))
+async def give_7(callback: types.CallbackQuery):
+    user_id = c.data.split("_")[2]
 
-    u = users.get(str(user_id), {})
-    
+    u = users.get(user_id, {})
     u["status"] = "active"
-    users[uid]["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
+    u["plan"] = 7
+    u["expire"] = (datetime.now() + timedelta(days=7)).isoformat()
+
+    users[user_id] = u
     save_users()
 
-    await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
-    await callback.answer("Доступ выдан")
+    await bot.send_message(user_id, "🔥 Доступ открыт на 7 дней")
+    await callback.answer("Выдано 7 дней")
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("give_30_"))
+async def give_30(callback: types.CallbackQuery):
+    user_id = callback.data.split("_")[2]
+    u = users.get(user_id, {})
+    u["status"] = "active"
+    u["plan"] = 30
+    u["expire"] = (datetime.now() + timedelta(days=30)).isoformat()
+
+    users[user_id] = u
+    save_users()
+
+    await bot.send_message(user_id, "🔥 Доступ открыт на 30 дней")
+    await callback.answer("Выдано 30 дней")
 
 @dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
 async def deny(callback: types.CallbackQuery):
-    uid = callback.data.split("_")[1]
+    user_id = callback.data.split("_")[1]
 
-    await bot.send_message(uid, "❌ Оплата отклонена")
+    await bot.send_message(user_id, "❌ Оплата отклонена")
     await callback.answer("Отклонено")
-
+    
 # ===== QUESTION =====
 async def send_question(message, u):
     if not has_access(u):
