@@ -302,19 +302,19 @@ async def receipt(message: types.Message):
     print("PHOTO RECEIVED FROM USER:", user.id)
     print("TRY SEND TO ADMIN:", ADMIN_ID)
 
-try:
-    await bot.send_photo(
-        ADMIN_ID,
-        message.photo[-1].file_id,
-        caption=f"💰 Оплата\nID: {user.id}\nТариф: {u.get('plan')}",
-        reply_markup=InlineKeyboardMarkup().add(
-            InlineKeyboardButton("✅ Дать доступ", callback_data=f"give_{user.id}")
+    try:
+        await bot.send_photo(
+            ADMIN_ID,
+            message.photo[-1].file_id,
+            caption=f"💰 Оплата\nID: {user.id}\nТариф: {u.get('plan')}",
+            reply_markup=InlineKeyboardMarkup().add(
+                InlineKeyboardButton("✅ Дать доступ", callback_data=f"give_{user.id}")
+            )
         )
-    )
-    print("SUCCESS SEND TO ADMIN")
-
-except Exception as e:
-    print("ERROR SENDING:", e) 
+        print("SUCCESS SEND TO ADMIN")
+    
+    except Exception as e:
+        print("ERROR SENDING:", e) 
 
     await message.answer("⏳ Чек отправлен на проверку")
     
