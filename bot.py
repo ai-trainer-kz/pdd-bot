@@ -97,18 +97,21 @@ def pay_kb(u):
 def ask_gpt(u):
     try:
         prompt = f"""
-Сделай вопрос ПДД.
+Сделай экзаменационный вопрос ПДД.
+НЕ ОШИБАЙСЯ В ПРАВИЛЬНОМ ОТВЕТЕ.
 
-Формат:
+Формат строго:
+
 Вопрос:
 ...
+
 A) ...
 B) ...
 C) ...
 D) ...
 
 Правильный ответ: A
-Объяснение: ...
+Объяснение: кратко
 """
 
         r = client.chat.completions.create(
@@ -182,7 +185,13 @@ async def plan(message: types.Message):
 
 @dp.message_handler(lambda m: "Оплатил" in m.text or "Төледім" in m.text)
 async def paid(message: types.Message):
-    await message.answer("Отправь чек (скрин)")
+    u = users[str(message.from_user.id)]
+
+    if not u.get("plan"):
+        await message.answer("Сначала выбери тариф")
+        return
+
+    await message.answer("📸 Отправь чек (скрин)")
 
 @dp.message_handler(content_types=types.ContentType.PHOTO)
 async def receipt(message: types.Message):
@@ -250,7 +259,11 @@ async def answer(message: types.Message):
         await message.answer(f"❌ Неверно\nОтвет: {u['correct_answer']}")
 
     if u["explanation"]:
-        await message.answer(f"📘 {u['explanation']}")
+        await message.answer(
+            f"📘 Объяснение:\n{u['explanation'][:300]}"
+        )
+
+    await message.answer("👇 Следующий вопрос")
 
     await send_question(message, u)
 
