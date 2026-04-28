@@ -204,11 +204,18 @@ async def paid(message: types.Message):
     )
 
     try:
+        user = message.from_user
+        now = datetime.now()
+        
         await bot.send_message(
             ADMIN_ID,
-            f"💰 ОПЛАТА\n"
-            f"👤 @{user.username}\n"
+            f"📅 {now.strftime('%d.%m.%Y')}\n"
+            f"⏰ {now.strftime('%H:%M')}\n\n"
+            f"💰 ОПЛАТА\n\n"
+            f"👤 @{user.username if user.username else 'нет'}\n"
             f"🆔 ID: {user.id}\n"
+            f"🌍 Язык: {user.language_code or 'неизвестно'}\n"
+            f"🏙 Город: не определён\n"
             f"📦 Тариф: {u.get('plan', 'не выбран')} дней",
             reply_markup=kb
         )
