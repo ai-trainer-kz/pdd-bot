@@ -183,6 +183,11 @@ async def buy(message: types.Message):
     kb.add("30 дней — 10000₸")
     kb.add("⬅️ Назад")
 
+@dp.message_handler(lambda m: "Назад" in m.text or "Артқа" in m.text)
+async def back(message: types.Message):
+    u = users[str(message.from_user.id)]
+    await message.answer("🏠 Главное меню", reply_markup=main_kb(u))
+
     await message.answer("Выбери тариф:", reply_markup=kb)
 
 @dp.message_handler(lambda m: "дней" in m.text)
@@ -196,29 +201,29 @@ async def plan(message: types.Message):
 
     save_users()
 
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("💰 Оплатил")
+    kb.add("⬅️ Назад")
+
     await message.answer(
-        f"💳 Kaspi: {KASPI}\n\n"
-        f"📦 Тариф: {u['plan']} дней\n\n"
-        "📸 После оплаты отправь чек\n"
-        "⏱ Проверка 1–5 минут"
+        f"💳 Оплата через Kaspi\n\n"
+        f"📦 Тариф: {u['plan']} дней\n"
+        f"💰 Переведи на: {KASPI}\n\n"
+        "📸 После оплаты нажми '💰 Оплатил' и отправь чек\n"
+        "⏱ Проверка: 1–5 минут",
+        reply_markup=kb
     )
 
 # ===== CHECK =====
-@dp.message_handler(content_types=types.ContentType.PHOTO)
-async def receipt(message: types.Message):
-    user = message.from_user
-    u = users[str(user.id)]
+@dp.message_handler(lambda m: "Оплатил" in m.text or "Төледім" in m.text)
+async def paid(message: types.Message):
+    u = users[str(message.from_user.id)]
 
-    await bot.send_photo(
-        ADMIN_ID,
-        message.photo[-1].file_id,
-        caption=f"Оплата от {user.id}, тариф {u.get('plan')}",
-        reply_markup=InlineKeyboardMarkup().add(
-            InlineKeyboardButton("✅ Дать доступ", callback_data=f"give_{user.id}")
-        )
-    )
+    if not u.get("plan"):
+        await message.answer("Сначала выбери тариф")
+        return
 
-    await message.answer("⏳ Чек отправлен")
+    await message.answer("📸 Отправь чек (скрин)")
 
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give(callback: types.CallbackQuery):
