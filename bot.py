@@ -80,7 +80,7 @@ def answer_kb():
     kb.add("⬅️ Назад")
     return kb
 
-# ===== GPT (FIXED 🔥) =====
+# ===== GPT =====
 def ask_gpt(uid):
     prompt = """
 Ты экзаменатор ПДД Казахстан.
@@ -115,7 +115,6 @@ D) ...
     question_only = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
     question_only = re.sub(r"Объяснение.*", "", question_only, flags=re.S)
 
-    # анти-повтор
     if last_questions.get(uid) == question_only:
         return ask_gpt(uid)
 
@@ -184,16 +183,16 @@ async def plan(message: types.Message):
     await message.answer(
         f"💳 Kaspi: {KASPI}\n\n"
         f"📦 Тариф: {u['plan']} дней\n\n"
-        "1️⃣ Оплати\n2️⃣ Нажми «Я оплатил»\n3️⃣ Отправь чек",
+        "1️⃣ Оплати\n2️⃣ Нажми «Я оплатил»",
         reply_markup=kb
     )
 
+# ===== PAYMENT =====
 @dp.message_handler(lambda m: m.text == "✅ Я оплатил")
 async def paid(message: types.Message):
     user = message.from_user
     u = users.get(str(user.id), {})
 
-    # кнопки для админа
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
@@ -204,9 +203,8 @@ async def paid(message: types.Message):
     )
 
     try:
-        user = message.from_user
         now = datetime.now()
-        
+
         await bot.send_message(
             ADMIN_ID,
             f"📅 {now.strftime('%d.%m.%Y')}\n"
@@ -225,6 +223,7 @@ async def paid(message: types.Message):
     except Exception as e:
         print("ERROR ADMIN:", e)
         await message.answer("❌ Ошибка отправки админу")
+
 # ===== CALLBACK =====
 @dp.callback_query_handler(lambda c: c.data.startswith("give_"))
 async def give(callback: types.CallbackQuery):
@@ -237,13 +236,14 @@ async def give(callback: types.CallbackQuery):
 
     await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
     await callback.answer("Доступ выдан")
-    
+
 @dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
 async def deny(callback: types.CallbackQuery):
     uid = callback.data.split("_")[1]
 
     await bot.send_message(uid, "❌ Оплата отклонена")
     await callback.answer("Отклонено")
+
 # ===== QUESTION =====
 async def send_question(message, u):
     if not has_access(u):
@@ -285,7 +285,8 @@ async def answer(message: types.Message):
             status = "✅ СДАЛ" if percent >= 80 else "❌ НЕ СДАЛ"
 
             await message.answer(
-                f"📊 Результат:\n{u['exam_correct']}/20\n{percent}%\n{status}"
+                f"📊 Результат:\n{u['exam_correct']}/20\n{percent}%\n{status}",
+                reply_markup=main_kb()
             )
             return
 
