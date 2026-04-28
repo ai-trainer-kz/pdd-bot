@@ -54,6 +54,15 @@ def answers_kb(lang):
 async def start(msg: types.Message):
     uid = str(msg.from_user.id)
 
+    users[uid] = users.get(uid, {
+    "lang": None,
+    "mode": None,
+    "stats": {"correct": 0, "wrong": 0},
+    "exam": {"q": 0, "errors": 0},
+    "used_questions": [],
+    "mistakes": []
+})
+
     users[uid] = {
         "lang": None,
         "mode": None,
@@ -118,35 +127,41 @@ async def send_question(msg):
     user = users[uid]
     lang = user["lang"]
 
-    await bot.send_chat_action(msg.chat.id, "typing")
+    used = user.get("used_questions", [])
 
-    if not user["queue"]:
+    available = [i for i in range(len(questions_db)) if i not in used]
+
+    if not available:
         await msg.answer("Вопросы закончились" if lang == "ru" else "Сұрақтар аяқталды")
+
         user["mode"] = None
-        save()
+        user["used_questions"] = []
+        save_users()
         return
 
-    q = user["queue"].pop(0)
+    index = random.choice(available)
+    q = questions_db[index]
+
+    user["used_questions"].append(index)
     user["last_question"] = q
 
     if user["mode"] == "exam":
         user["exam"]["q"] += 1
 
-    save()
+    save_users()
 
-    question = q["q_kz"] if lang == "kz" else q["q_ru"]
-    options = q["options_kz"] if lang == "kz" else q["options_ru"]
+    text = (q["q_kz"] if lang == "kz" else q["q_ru"]) + "\n\n"
+    text += "\n".join(q["options_kz"] if lang == "kz" else q["options_ru"])
 
-    await msg.answer(
-        f"{question}\n\n" + "\n".join(options),
-        reply_markup=answers_kb(lang)
-    )
-
+    await msg.answer(text, reply_markup=get_answers_kb(lang))
 # ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A", "B", "C", "D"])
 async def answer(msg: types.Message):
     uid = str(msg.from_user.id)
     user = users.get(uid)
+
+    if user.get("mode") is None:
+    return
 
     if not user or user.get("mode") is None:
         return
@@ -185,6 +200,9 @@ async def answer(msg: types.Message):
             save()
             return
 
+        if msg.text != correct:
+            user["mistakes"].append(q)
+
     save()
     await send_question(msg)
 
@@ -197,25 +215,25 @@ async def stats(msg: types.Message):
     await msg.answer(f"✅ {s['correct']} | ❌ {s['wrong']}")
 
 # ===== AI TRAINER =====
-@dp.message_handler(lambda m: "Обучение" in m.text or "Оқу" in m.text)
-async def ai(msg: types.Message):
+@dp.message_handler(lambda msg: "Обучение" in msg.text or "Оқу" in msg.text)
+async def training(msg: types.Message):
     uid = str(msg.from_user.id)
-    mistakes = users[uid]["mistakes"][-3:]
+    user = users[uid]
+    lang = user["lang"]
+
+    mistakes = user.get("mistakes", [])
 
     if not mistakes:
-        await msg.answer("Нет ошибок для разбора")
+        await msg.answer("Нет ошибок для разбора" if lang == "ru" else "Қателер жоқ")
         return
 
-    text = "Объясни ошибки:\n" + "\n".join([q["q_ru"] for q in mistakes])
+    text = "Разбор ошибок:\n\n" if lang == "ru" else "Қателер талдауы:\n\n"
 
-    await bot.send_chat_action(msg.chat.id, "typing")
+    for q in mistakes[-5:]:
+        text += f"{q['q_ru' if lang=='ru' else 'q_kz']}\n"
+        text += f"👉 {q['ex_ru' if lang=='ru' else 'ex_kz']}\n\n"
 
-    res = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": text}]
-    )
-
-    await msg.answer(res.choices[0].message.content)
+    await msg.answer(text)
 
 # ===== RUN =====
 if __name__ == "__main__":
