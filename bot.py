@@ -38,7 +38,7 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
-users = {}
+users = load_users()
 last_questions = {}
 
 # ===== SAVE =====
@@ -75,11 +75,13 @@ def ensure_user(uid):
 
 def has_access(u):
     try:
-        if u["premium_until"] and datetime.now() < datetime.fromisoformat(u["premium_until"]):
-            return True
+        if u.get("expire"):
+            if datetime.now() < datetime.fromisoformat(u["expire"]):
+                return True
     except:
         pass
-    return u["used_free"] < u["free_limit"]
+
+    return u.get("used_free", 0) < u.get("free_limit", 5)
 
 # ===== UI =====
 def main_kb():
@@ -153,8 +155,8 @@ async def start(message: types.Message):
 # ===== MODE =====
 @dp.message_handler(lambda m: m.text == "🎯 Тренировка")
 async def train(message: types.Message):
+    ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
-    u["mode"] = "train"
 
     if not has_access(u):
         await message.answer(
@@ -304,6 +306,8 @@ async def send_question(message, u):
             reply_markup=main_kb()
         )
         return
+    users[str(message.from_user.id)] = u
+    save_users()
 
     if not u["premium_until"]:
         u["used_free"] += 1
@@ -355,7 +359,7 @@ async def answer(message: types.Message):
 
             await message.answer(msg, reply_markup=main_kb())
             return
-
+    users[str(message.from_user.id)] = u
     save_users()
     await send_question(message, u)
 
