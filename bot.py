@@ -286,7 +286,7 @@ async def send_question(message, u):
     text, ans, exp = ask_gpt(message.from_user.id)
 
     if u.get("mode") == "exam":
-    u["exam_count"] = u.get("exam_count", 0) + 1
+        u["exam_count"] = u.get("exam_count", 0) + 1
 
     u["correct_answer"] = ans
     u["explanation"] = exp
