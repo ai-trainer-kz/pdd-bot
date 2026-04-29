@@ -152,9 +152,6 @@ async def train(message: types.Message):
             reply_markup=main_kb()
         )
         return
-
-    await send_question(message, u)
-
 # ===== EXAM =====
 @dp.message_handler(lambda m: m.text == "🧠 Экзамен")
 async def exam(message: types.Message):
@@ -169,7 +166,7 @@ async def exam(message: types.Message):
         return
 
     await message.answer("🧠 Экзамен: 20 вопросов")
-    await send_question(message, u)
+    return await send_question(message, u)
 
 # ===== BUY =====
 @dp.message_handler(lambda m: "Купить" in m.text)
