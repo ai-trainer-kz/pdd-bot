@@ -9,7 +9,6 @@ from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeybo
 from aiogram.utils import executor
 from openai import OpenAI
 
-# ===== CONFIG =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -24,23 +23,21 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
-users = {}
-last_questions = {}
-
-# ===== SAVE =====
-def save_users():
-    with open("users.json", "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
+USERS_FILE = "users.json"
 
 def load_users():
-    global users
-    try:
-        with open("users.json", "r", encoding="utf-8") as f:
-            users = json.load(f)
-    except:
-        users = {}
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
 
-# ===== USER =====
+def save_users():
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
+
+users = load_users()
+last_questions = {}
+
 def ensure_user(uid):
     uid = str(uid)
     if uid not in users:
@@ -52,22 +49,24 @@ def ensure_user(uid):
             "used_free": 0,
             "premium_until": None,
             "plan": None,
+            "status": None,
             "correct": 0,
             "wrong": 0,
             "exam_count": 0,
-            "exam_correct": 0
+            "exam_correct": 0,
+            "waiting_answer": False   # 🔥 ВАЖНО
         }
         save_users()
 
 def has_access(u):
     try:
-        if u["premium_until"] and datetime.now() < datetime.fromisoformat(u["premium_until"]):
-            return True
+        if u.get("premium_until"):
+            if datetime.now() < datetime.fromisoformat(u["premium_until"]):
+                return True
     except:
         pass
     return u["used_free"] < u["free_limit"]
 
-# ===== UI =====
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("🎯 Тренировка", "🧠 Экзамен")
@@ -80,7 +79,6 @@ def answer_kb():
     kb.add("⬅️ Назад")
     return kb
 
-# ===== GPT =====
 def ask_gpt(uid):
     prompt = """
 Ты экзаменатор ПДД Казахстан.
@@ -122,7 +120,6 @@ D) ...
 
     return question_only, ans.group(1) if ans else "A", exp.group(1).strip() if exp else ""
 
-# ===== START =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
     ensure_user(message.from_user.id)
@@ -136,158 +133,70 @@ async def start(message: types.Message):
         reply_markup=main_kb()
     )
 
-# ===== MODE =====
 @dp.message_handler(lambda m: m.text == "🎯 Тренировка")
 async def train(message: types.Message):
+    ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
     u["mode"] = "train"
 
     if not has_access(u):
-        await message.answer(
-            "🔒 Бесплатные вопросы закончились\n\n"
-            "🔥 Купи доступ и готовься без ограничений",
-            reply_markup=main_kb()
-        )
+        await message.answer("🔒 Нет доступа", reply_markup=main_kb())
         return
 
-    await send_question(message, u)
+    return await send_question(message, u)
 
 @dp.message_handler(lambda m: m.text == "🧠 Экзамен")
 async def exam(message: types.Message):
+    ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
     u["mode"] = "exam"
     u["exam_count"] = 0
     u["exam_correct"] = 0
 
-    await message.answer("🧠 Экзамен: 20 вопросов")
-    await send_question(message, u)
-
-# ===== BUY =====
-@dp.message_handler(lambda m: "Купить" in m.text)
-async def buy(message: types.Message):
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("7 дней — 5000₸")
-    kb.add("30 дней — 10000₸")
-    kb.add("⬅️ Назад")
-
-    await message.answer(
-        "💰 Выбери тариф:\n\n"
-        "🔥 Безлимитные вопросы\n"
-        "🧠 Умные объяснения\n"
-        "📈 Быстрый рост результата",
-        reply_markup=kb
-    )
-
-# ===== PLAN =====
-@dp.message_handler(lambda m: m.text in ["7 дней — 5000₸", "30 дней — 10000₸"])
-async def plan(message: types.Message):
-    u = users[str(message.from_user.id)]
-
-    u["plan"] = 7 if "7" in message.text else 30
-    save_users()
-
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("✅ Я оплатил")
-    kb.add("⬅️ Назад")
-
-    await message.answer(
-        f"💳 Kaspi: {KASPI}\n\n"
-        f"📦 Тариф: {u['plan']} дней\n\n"
-        "🔥 Полный доступ:\n"
-        "• Безлимитные вопросы\n"
-        "• Экзамен без ограничений\n"
-        "• Объяснения от AI\n\n"
-        "1️⃣ Оплати\n2️⃣ Нажми «Я оплатил»",
-        reply_markup=kb
-    )
-
-# ===== PAYMENT =====
-@dp.message_handler(lambda m: m.text == "✅ Я оплатил")
-async def paid(message: types.Message):
-    user = message.from_user
-    u = users.get(str(user.id), {})
-
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
-        InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
-    )
-    kb.add(
-        InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}")
-    )
-
-    try:
-        now = datetime.now()
-
-        await bot.send_message(
-            ADMIN_ID,
-            f"📅 {now.strftime('%d.%m.%Y')}\n"
-            f"⏰ {now.strftime('%H:%M')}\n\n"
-            f"💰 ОПЛАТА\n\n"
-            f"👤 @{user.username if user.username else 'нет'}\n"
-            f"🆔 ID: {user.id}\n"
-            f"🌍 Язык: {user.language_code or 'неизвестно'}\n"
-            f"🏙 Город: не определён\n"
-            f"📦 Тариф: {u.get('plan', 'не выбран')} дней",
-            reply_markup=kb
-        )
-
-        await message.answer("✅ Отправлено админу на проверку")
-
-    except Exception as e:
-        print("ERROR ADMIN:", e)
-        await message.answer("❌ Ошибка отправки админу")
-
-# ===== CALLBACK =====
-@dp.callback_query_handler(lambda c: c.data.startswith("give_"))
-async def give(callback: types.CallbackQuery):
-    data = callback.data.split("_")
-    days = int(data[1])
-    uid = data[2]
-
-    users[uid]["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
-    save_users()
-
-    await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
-    await callback.answer("Доступ выдан")
-
-@dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
-async def deny(callback: types.CallbackQuery):
-    uid = callback.data.split("_")[1]
-
-    await bot.send_message(uid, "❌ Оплата отклонена")
-    await callback.answer("Отклонено")
-
-# ===== QUESTION =====
-async def send_question(message, u):
     if not has_access(u):
-        await message.answer(
-            "🔒 Бесплатные вопросы закончились\n\n"
-            "🔥 Открой полный доступ и готовься без ограничений\n"
-            "💯 Сдашь с первого раза",
-            reply_markup=main_kb()
-        )
+        await message.answer("🔒 Нет доступа", reply_markup=main_kb())
         return
 
-    if not u["premium_until"]:
+    await message.answer("🧠 Экзамен: 20 вопросов")
+    return await send_question(message, u)
+
+async def send_question(message, u):
+    if not has_access(u):
+        await message.answer("🔒 Нет доступа", reply_markup=main_kb())
+        return
+
+    # 🔒 защита от дублей
+    if u.get("waiting_answer"):
+        return
+
+    u["waiting_answer"] = True
+
+    if not u.get("premium_until"):
         u["used_free"] += 1
 
     text, ans, exp = ask_gpt(message.from_user.id)
 
+    if u.get("mode") == "exam":
+        u["exam_count"] += 1
+
     u["correct_answer"] = ans
     u["explanation"] = exp
 
-    progress = ""
-    if u["mode"] == "exam":
-        progress = f"\n\n📊 Вопрос {u['exam_count'] + 1}/20"
+    if u.get("mode") == "exam":
+        text += f"\n\n📊 Вопрос {u['exam_count']}/20"
 
-    await message.answer(text + progress, reply_markup=answer_kb())
+    await message.answer(text, reply_markup=answer_kb())
     save_users()
 
-# ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A","B","C","D"])
 async def answer(message: types.Message):
     u = users[str(message.from_user.id)]
+
+    # 🔒 защита от дублей
+    if not u.get("waiting_answer"):
+        return
+
+    u["waiting_answer"] = False
 
     if message.text == u["correct_answer"]:
         u["correct"] += 1
@@ -301,38 +210,22 @@ async def answer(message: types.Message):
     if u["explanation"]:
         await message.answer(f"📘 {u['explanation'][:200]}")
 
-    if u["mode"] == "exam":
-        u["exam_count"] += 1
-        if u["exam_count"] >= 20:
-            percent = int(u["exam_correct"]/20*100)
-
-            msg = (
-                f"📊 Результат:\n"
-                f"{u['exam_correct']}/20\n"
-                f"{percent}%\n\n"
-            )
-
-            if percent < 80:
-                msg += "❌ Не сдал\n\n🔥 Пройди тренировку и попробуй снова"
-            else:
-                msg += "🔥 Отлично! Ты готов к экзамену"
-
-            await message.answer(msg, reply_markup=main_kb())
-            return
+    if u.get("mode") == "exam" and u["exam_count"] >= 20:
+        percent = int(u["exam_correct"]/20*100)
+        await message.answer(f"Результат: {percent}%", reply_markup=main_kb())
+        return
 
     save_users()
-    await send_question(message, u)
+    return await send_question(message, u)
 
-# ===== BACK =====
 @dp.message_handler(lambda m: m.text == "⬅️ Назад")
 async def back(message: types.Message):
     ensure_user(message.from_user.id)
     users[str(message.from_user.id)]["mode"] = None
+    users[str(message.from_user.id)]["waiting_answer"] = False
     save_users()
-
     await message.answer("🏠 Главное меню", reply_markup=main_kb())
 
-# ===== STATS =====
 @dp.message_handler(lambda m: m.text == "📊 Статистика")
 async def stats(message: types.Message):
     u = users[str(message.from_user.id)]
@@ -342,12 +235,10 @@ async def stats(message: types.Message):
 
     await message.answer(
         f"📊 Статистика\n\n"
-        f"✅ Правильно: {u['correct']}\n"
-        f"❌ Ошибки: {u['wrong']}\n"
-        f"📈 Процент: {percent}%"
+        f"✅ {u['correct']}\n"
+        f"❌ {u['wrong']}\n"
+        f"{percent}%"
     )
 
-# ===== RUN =====
 if __name__ == "__main__":
-    load_users()
     executor.start_polling(dp, skip_updates=True)
