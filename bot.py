@@ -152,6 +152,10 @@ async def train(message: types.Message):
             reply_markup=main_kb()
         )
         return
+
+    return await send_question(message, u)
+
+
 # ===== EXAM =====
 @dp.message_handler(lambda m: m.text == "🧠 Экзамен")
 async def exam(message: types.Message):
@@ -168,6 +172,59 @@ async def exam(message: types.Message):
     await message.answer("🧠 Экзамен: 20 вопросов")
     return await send_question(message, u)
 
+
+# ===== QUESTION =====
+async def send_question(message, u):
+    if not has_access(u):
+        await message.answer("🔒 Нет доступа", reply_markup=main_kb())
+        return
+
+    if not u.get("premium_until"):
+        u["used_free"] += 1
+
+    text, ans, exp = ask_gpt(message.from_user.id)
+
+    # 👉 счётчик увеличивается ТУТ (правильно)
+    if u.get("mode") == "exam":
+        u["exam_count"] = u.get("exam_count", 0) + 1
+
+    u["correct_answer"] = ans
+    u["explanation"] = exp
+
+    if u.get("mode") == "exam":
+        text += f"\n\n📊 Вопрос {u['exam_count']}/20"
+
+    await message.answer(text, reply_markup=answer_kb())
+    save_users()
+
+
+# ===== ANSWER =====
+@dp.message_handler(lambda m: m.text in ["A","B","C","D"])
+async def answer(message: types.Message):
+    u = users[str(message.from_user.id)]
+
+    if message.text == u["correct_answer"]:
+        u["correct"] += 1
+        if u["mode"] == "exam":
+            u["exam_correct"] += 1
+        await message.answer("✅ Верно")
+    else:
+        u["wrong"] += 1
+        await message.answer(f"❌ Неверно\nОтвет: {u['correct_answer']}")
+
+    if u["explanation"]:
+        await message.answer(f"📘 {u['explanation'][:200]}")
+
+    # 👉 проверка конца экзамена
+    if u.get("mode") == "exam" and u["exam_count"] >= 20:
+        percent = int(u["exam_correct"]/20*100)
+        await message.answer(f"Результат: {percent}%", reply_markup=main_kb())
+        return
+
+    save_users()
+
+    # 👉 ВАЖНО: вот это возвращаем обратно
+    return await send_question(message, u)
 # ===== BUY =====
 @dp.message_handler(lambda m: "Купить" in m.text)
 async def buy(message: types.Message):
