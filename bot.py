@@ -169,7 +169,7 @@ async def exam(message: types.Message):
     u["exam_count"] = 0
     u["exam_correct"] = 0
     u["waiting_answer"] = False
-    "in_process": False,
+    u["in_process"] = False
 
     if not has_access(u):
         await message.answer("🔒 Нет доступа", reply_markup=main_kb())
