@@ -285,10 +285,13 @@ async def send_question(message, u):
 
     text, ans, exp = ask_gpt(message.from_user.id)
 
+    if u.get("mode") == "exam":
+    u["exam_count"] = u.get("exam_count", 0) + 1
+
     u["correct_answer"] = ans
     u["explanation"] = exp
 
-    text += f"\n\n📊 Вопрос {u['exam_count']}/20"
+    text += f"\n\n📊 Вопрос {u.get('exam_count', 1)}/20"
 
     await message.answer(text, reply_markup=answer_kb())
     save_users()
@@ -310,8 +313,6 @@ async def answer(message: types.Message):
     if u["explanation"]:
         await message.answer(f"📘 {u['explanation'][:200]}")
 
-    if u["mode"] == "exam":
-        u["exam_count"] += 1
         if u["exam_count"] >= 20:
             percent = int(u["exam_correct"]/20*100)
             await message.answer(f"Результат: {percent}%", reply_markup=main_kb())
@@ -319,9 +320,9 @@ async def answer(message: types.Message):
 
     save_users()
     
-    if u.get("mode") in ["train", "exam"]:
-        await send_question(message, u)
-        return
+    # if u.get("mode") in ["train", "exam"]:
+    #     await send_question(message, u)
+    #     return
 
 # ===== BACK =====
 @dp.message_handler(lambda m: m.text == "⬅️ Назад")
