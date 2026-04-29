@@ -143,11 +143,7 @@ async def train(message: types.Message):
     u["mode"] = "train"
 
     if not has_access(u):
-        await message.answer(
-            "🔒 Бесплатные вопросы закончились\n\n"
-            "🔥 Купи доступ и готовься без ограничений",
-            reply_markup=main_kb()
-        )
+        await message.answer("🔒 Купи доступ", reply_markup=main_kb())
         return
 
     await send_question(message, u)
@@ -170,13 +166,7 @@ async def buy(message: types.Message):
     kb.add("30 дней — 10000₸")
     kb.add("⬅️ Назад")
 
-    await message.answer(
-        "💰 Выбери тариф:\n\n"
-        "🔥 Безлимитные вопросы\n"
-        "🧠 Умные объяснения\n"
-        "📈 Быстрый рост результата",
-        reply_markup=kb
-    )
+    await message.answer("💰 Выбери тариф:", reply_markup=kb)
 
 # ===== PLAN =====
 @dp.message_handler(lambda m: m.text in ["7 дней — 5000₸", "30 дней — 10000₸"])
@@ -193,10 +183,6 @@ async def plan(message: types.Message):
     await message.answer(
         f"💳 Kaspi: {KASPI}\n\n"
         f"📦 Тариф: {u['plan']} дней\n\n"
-        "🔥 Полный доступ:\n"
-        "• Безлимитные вопросы\n"
-        "• Экзамен без ограничений\n"
-        "• Объяснения от AI\n\n"
         "1️⃣ Оплати\n2️⃣ Нажми «Я оплатил»",
         reply_markup=kb
     )
@@ -261,12 +247,7 @@ async def deny(callback: types.CallbackQuery):
 # ===== QUESTION =====
 async def send_question(message, u):
     if not has_access(u):
-        await message.answer(
-            "🔒 Бесплатные вопросы закончились\n\n"
-            "🔥 Открой полный доступ и готовься без ограничений\n"
-            "💯 Сдашь с первого раза",
-            reply_markup=main_kb()
-        )
+        await message.answer("🔒 Купи доступ", reply_markup=main_kb())
         return
 
     if not u["premium_until"]:
@@ -277,11 +258,7 @@ async def send_question(message, u):
     u["correct_answer"] = ans
     u["explanation"] = exp
 
-    progress = ""
-    if u["mode"] == "exam":
-        progress = f"\n\n📊 Вопрос {u['exam_count'] + 1}/20"
-
-    await message.answer(text + progress, reply_markup=answer_kb())
+    await message.answer(text, reply_markup=answer_kb())
     save_users()
 
 # ===== ANSWER =====
@@ -305,19 +282,12 @@ async def answer(message: types.Message):
         u["exam_count"] += 1
         if u["exam_count"] >= 20:
             percent = int(u["exam_correct"]/20*100)
+            status = "✅ СДАЛ" if percent >= 80 else "❌ НЕ СДАЛ"
 
-            msg = (
-                f"📊 Результат:\n"
-                f"{u['exam_correct']}/20\n"
-                f"{percent}%\n\n"
+            await message.answer(
+                f"📊 Результат:\n{u['exam_correct']}/20\n{percent}%\n{status}",
+                reply_markup=main_kb()
             )
-
-            if percent < 80:
-                msg += "❌ Не сдал\n\n🔥 Пройди тренировку и попробуй снова"
-            else:
-                msg += "🔥 Отлично! Ты готов к экзамену"
-
-            await message.answer(msg, reply_markup=main_kb())
             return
 
     save_users()
