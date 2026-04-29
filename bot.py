@@ -4,20 +4,6 @@ import json
 from datetime import datetime, timedelta
 import re
 
-USERS_FILE = "users.json"
-
-def load_users():
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-def save_users():
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
-
-users = load_users()
-
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
@@ -38,7 +24,7 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
-users = load_users()
+users = {}
 last_questions = {}
 
 # ===== SAVE =====
@@ -75,13 +61,11 @@ def ensure_user(uid):
 
 def has_access(u):
     try:
-        if u.get("expire"):
-            if datetime.now() < datetime.fromisoformat(u["expire"]):
-                return True
+        if u["premium_until"] and datetime.now() < datetime.fromisoformat(u["premium_until"]):
+            return True
     except:
         pass
-
-    return u.get("used_free", 0) < u.get("free_limit", 5)
+    return u["used_free"] < u["free_limit"]
 
 # ===== UI =====
 def main_kb():
@@ -155,8 +139,8 @@ async def start(message: types.Message):
 # ===== MODE =====
 @dp.message_handler(lambda m: m.text == "🎯 Тренировка")
 async def train(message: types.Message):
-    ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
+    u["mode"] = "train"
 
     if not has_access(u):
         await message.answer(
@@ -222,10 +206,6 @@ async def plan(message: types.Message):
 async def paid(message: types.Message):
     user = message.from_user
     u = users.get(str(user.id), {})
-    
-    u["status"] = "pending"
-    users[str(user.id)] = u
-    save_users()
 
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -259,43 +239,25 @@ async def paid(message: types.Message):
         await message.answer("❌ Ошибка отправки админу")
 
 # ===== CALLBACK =====
-@dp.callback_query_handler(lambda c: c.data.startswith("give_7_"))
-async def give_7(callback: types.CallbackQuery):
-    user_id = callback.data.split("_")[2]
+@dp.callback_query_handler(lambda c: c.data.startswith("give_"))
+async def give(callback: types.CallbackQuery):
+    data = callback.data.split("_")
+    days = int(data[1])
+    uid = data[2]
 
-    u = users.get(user_id, {})
-    u["status"] = "active"
-    u["plan"] = 7
-    u["expire"] = (datetime.now() + timedelta(days=7)).isoformat()
-
-    users[user_id] = u
+    users[uid]["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
     save_users()
 
-    await bot.send_message(user_id, "🔥 Доступ открыт на 7 дней")
-    await callback.answer("Выдано 7 дней")
-
-
-@dp.callback_query_handler(lambda c: c.data.startswith("give_30_"))
-async def give_30(callback: types.CallbackQuery):
-    user_id = callback.data.split("_")[2]
-    u = users.get(user_id, {})
-    u["status"] = "active"
-    u["plan"] = 30
-    u["expire"] = (datetime.now() + timedelta(days=30)).isoformat()
-
-    users[user_id] = u
-    save_users()
-
-    await bot.send_message(user_id, "🔥 Доступ открыт на 30 дней")
-    await callback.answer("Выдано 30 дней")
+    await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
+    await callback.answer("Доступ выдан")
 
 @dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
 async def deny(callback: types.CallbackQuery):
-    user_id = callback.data.split("_")[1]
+    uid = callback.data.split("_")[1]
 
-    await bot.send_message(user_id, "❌ Оплата отклонена")
+    await bot.send_message(uid, "❌ Оплата отклонена")
     await callback.answer("Отклонено")
-    
+
 # ===== QUESTION =====
 async def send_question(message, u):
     if not has_access(u):
@@ -306,8 +268,6 @@ async def send_question(message, u):
             reply_markup=main_kb()
         )
         return
-    users[str(message.from_user.id)] = u
-    save_users()
 
     if not u["premium_until"]:
         u["used_free"] += 1
@@ -359,7 +319,7 @@ async def answer(message: types.Message):
 
             await message.answer(msg, reply_markup=main_kb())
             return
-    users[str(message.from_user.id)] = u
+
     save_users()
     await send_question(message, u)
 
