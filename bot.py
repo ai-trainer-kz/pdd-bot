@@ -160,16 +160,10 @@ async def exam(message: types.Message):
     ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
 
-    # 🔒 анти-дубль
-    if u.get("last_action") == "exam":
-        return
-    u["last_action"] = "exam"
-
     u["mode"] = "exam"
     u["exam_count"] = 0
     u["exam_correct"] = 0
     u["waiting_answer"] = False
-    u["in_process"] = False
 
     if not has_access(u):
         await message.answer("🔒 Нет доступа", reply_markup=main_kb())
@@ -177,6 +171,7 @@ async def exam(message: types.Message):
 
     await message.answer("🧠 Экзамен: 20 вопросов")
     return await send_question(message, u)
+
 # ===== BUY =====
 @dp.message_handler(lambda m: "Купить" in m.text)
 async def buy(message: types.Message):
@@ -185,10 +180,7 @@ async def buy(message: types.Message):
     kb.add("30 дней — 10000₸")
     kb.add("⬅️ Назад")
 
-    await message.answer(
-        "💰 Выбери тариф:",
-        reply_markup=kb
-    )
+    await message.answer("💰 Выбери тариф:", reply_markup=kb)
 
 # ===== PLAN =====
 @dp.message_handler(lambda m: m.text in ["7 дней — 5000₸", "30 дней — 10000₸"])
@@ -211,57 +203,10 @@ async def plan(message: types.Message):
         reply_markup=kb
     )
 
-# ===== PAYMENT =====
-@dp.message_handler(lambda m: m.text == "✅ Я оплатил")
-async def paid(message: types.Message):
-    user = message.from_user
-    u = users[str(user.id)]
-
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
-        InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
-    )
-    kb.add(InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}"))
-
-    await bot.send_message(
-        ADMIN_ID,
-        f"💰 ОПЛАТА\nID: {user.id}\nТариф: {u.get('plan')}",
-        reply_markup=kb
-    )
-
-    await message.answer("⏳ Ожидает подтверждения")
-
-# ===== CALLBACK =====
-@dp.callback_query_handler(lambda c: c.data.startswith("give_"))
-async def give(callback: types.CallbackQuery):
-    data = callback.data.split("_")
-    days = int(data[1])
-    uid = data[2]
-
-    u = users.get(uid, {})
-    u["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
-    u["status"] = "active"
-
-    users[uid] = u
-    save_users()
-
-    await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
-    await callback.answer("OK")
-
-@dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
-async def deny(callback: types.CallbackQuery):
-    uid = callback.data.split("_")[1]
-    await bot.send_message(uid, "❌ Оплата отклонена")
-    await callback.answer("OK")
-
 # ===== QUESTION =====
 async def send_question(message, u):
     if not has_access(u):
         await message.answer("🔒 Нет доступа", reply_markup=main_kb())
-        return
-
-    if u.get("waiting_answer"):
         return
 
     u["waiting_answer"] = True
@@ -272,8 +217,7 @@ async def send_question(message, u):
     text, ans, exp = ask_gpt(message.from_user.id)
 
     if u["mode"] == "exam":
-        u["exam_count"] += 1
-        text += f"\n\n📊 Вопрос {u['exam_count']}/20"
+        text += f"\n\n📊 Вопрос {u['exam_count']+1}/20"
 
     u["correct_answer"] = ans
     u["explanation"] = exp
@@ -288,8 +232,6 @@ async def answer(message: types.Message):
 
     if not u.get("waiting_answer"):
         return
-    
-    u["in_process"] = True
 
     u["waiting_answer"] = False
 
@@ -305,14 +247,15 @@ async def answer(message: types.Message):
     if u["explanation"]:
         await message.answer(f"📘 {u['explanation'][:200]}")
 
-    if u["mode"] == "exam" and u["exam_count"] >= 20:
-        percent = int(u["exam_correct"]/20*100)
-        await message.answer(f"Результат: {percent}%", reply_markup=main_kb())
-        return
+    if u["mode"] == "exam":
+        u["exam_count"] += 1
+        if u["exam_count"] >= 20:
+            percent = int(u["exam_correct"]/20*100)
+            await message.answer(f"Результат: {percent}%", reply_markup=main_kb())
+            return
 
     save_users()
 
-    u["in_process"] = False
     return await send_question(message, u)
 
 # ===== BACK =====
@@ -320,6 +263,7 @@ async def answer(message: types.Message):
 async def back(message: types.Message):
     ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
+
     u["mode"] = None
     u["waiting_answer"] = False
     save_users()
