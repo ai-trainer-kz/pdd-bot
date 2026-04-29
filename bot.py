@@ -321,6 +321,7 @@ async def answer(message: types.Message):
     
     if u.get("mode") in ["train", "exam"]:
         await send_question(message, u)
+        return
 
 # ===== BACK =====
 @dp.message_handler(lambda m: m.text == "⬅️ Назад")
