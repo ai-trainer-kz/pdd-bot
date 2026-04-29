@@ -24,8 +24,9 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
-users = load_users()
+users = {}
 last_questions = {}
+
 # ===== SAVE =====
 def save_users():
     with open("users.json", "w", encoding="utf-8") as f:
