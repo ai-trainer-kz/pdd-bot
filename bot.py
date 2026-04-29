@@ -288,8 +288,7 @@ async def send_question(message, u):
     u["correct_answer"] = ans
     u["explanation"] = exp
 
-    if u["mode"] == "exam":
-        text += f"\n\n📊 Вопрос {u['exam_count'] + 1}/20"
+    text += f"\n\n📊 Вопрос {u['exam_count']}/20"
 
     await message.answer(text, reply_markup=answer_kb())
     save_users()
@@ -319,6 +318,8 @@ async def answer(message: types.Message):
             return
 
     save_users()
+    
+    if u.get("mode") in ["train", "exam"]:
     await send_question(message, u)
 
 # ===== BACK =====
