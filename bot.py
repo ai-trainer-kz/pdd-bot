@@ -160,6 +160,11 @@ async def exam(message: types.Message):
     ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
 
+    # 🔒 анти-дубль
+    if u.get("last_action") == "exam":
+        return
+    u["last_action"] = "exam"
+
     u["mode"] = "exam"
     u["exam_count"] = 0
     u["exam_correct"] = 0
@@ -171,7 +176,6 @@ async def exam(message: types.Message):
 
     await message.answer("🧠 Экзамен: 20 вопросов")
     return await send_question(message, u)
-
 # ===== BUY =====
 @dp.message_handler(lambda m: "Купить" in m.text)
 async def buy(message: types.Message):
