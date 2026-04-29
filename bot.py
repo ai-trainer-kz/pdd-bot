@@ -169,6 +169,7 @@ async def exam(message: types.Message):
     u["exam_count"] = 0
     u["exam_correct"] = 0
     u["waiting_answer"] = False
+    "in_process": False,
 
     if not has_access(u):
         await message.answer("🔒 Нет доступа", reply_markup=main_kb())
@@ -287,6 +288,8 @@ async def answer(message: types.Message):
 
     if not u.get("waiting_answer"):
         return
+    
+    u["in_process"] = True
 
     u["waiting_answer"] = False
 
@@ -308,6 +311,8 @@ async def answer(message: types.Message):
         return
 
     save_users()
+
+    u["in_process"] = False
     return await send_question(message, u)
 
 # ===== BACK =====
