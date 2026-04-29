@@ -9,6 +9,7 @@ from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeybo
 from aiogram.utils import executor
 from openai import OpenAI
 
+# ===== CONFIG =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -25,6 +26,7 @@ logging.basicConfig(level=logging.INFO)
 
 USERS_FILE = "users.json"
 
+# ===== USERS =====
 def load_users():
     if os.path.exists(USERS_FILE):
         with open(USERS_FILE, "r", encoding="utf-8") as f:
@@ -38,6 +40,7 @@ def save_users():
 users = load_users()
 last_questions = {}
 
+# ===== USER =====
 def ensure_user(uid):
     uid = str(uid)
     if uid not in users:
@@ -54,7 +57,7 @@ def ensure_user(uid):
             "wrong": 0,
             "exam_count": 0,
             "exam_correct": 0,
-            "waiting_answer": False   # 🔥 ВАЖНО
+            "waiting_answer": False
         }
         save_users()
 
@@ -67,6 +70,7 @@ def has_access(u):
         pass
     return u["used_free"] < u["free_limit"]
 
+# ===== UI =====
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("🎯 Тренировка", "🧠 Экзамен")
@@ -79,13 +83,14 @@ def answer_kb():
     kb.add("⬅️ Назад")
     return kb
 
+# ===== GPT =====
 def ask_gpt(uid):
     prompt = """
 Ты экзаменатор ПДД Казахстан.
 
 Сгенерируй 1 НОВЫЙ вопрос.
 
-Ответ строго в формате:
+Ответ строго:
 
 Вопрос:
 ...
@@ -120,6 +125,7 @@ D) ...
 
     return question_only, ans.group(1) if ans else "A", exp.group(1).strip() if exp else ""
 
+# ===== START =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
     ensure_user(message.from_user.id)
@@ -133,11 +139,14 @@ async def start(message: types.Message):
         reply_markup=main_kb()
     )
 
+# ===== TRAIN =====
 @dp.message_handler(lambda m: m.text == "🎯 Тренировка")
 async def train(message: types.Message):
     ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
+
     u["mode"] = "train"
+    u["waiting_answer"] = False
 
     if not has_access(u):
         await message.answer("🔒 Нет доступа", reply_markup=main_kb())
@@ -145,13 +154,16 @@ async def train(message: types.Message):
 
     return await send_question(message, u)
 
+# ===== EXAM =====
 @dp.message_handler(lambda m: m.text == "🧠 Экзамен")
 async def exam(message: types.Message):
     ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
+
     u["mode"] = "exam"
     u["exam_count"] = 0
     u["exam_correct"] = 0
+    u["waiting_answer"] = False
 
     if not has_access(u):
         await message.answer("🔒 Нет доступа", reply_markup=main_kb())
@@ -160,12 +172,90 @@ async def exam(message: types.Message):
     await message.answer("🧠 Экзамен: 20 вопросов")
     return await send_question(message, u)
 
+# ===== BUY =====
+@dp.message_handler(lambda m: "Купить" in m.text)
+async def buy(message: types.Message):
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("7 дней — 5000₸")
+    kb.add("30 дней — 10000₸")
+    kb.add("⬅️ Назад")
+
+    await message.answer(
+        "💰 Выбери тариф:",
+        reply_markup=kb
+    )
+
+# ===== PLAN =====
+@dp.message_handler(lambda m: m.text in ["7 дней — 5000₸", "30 дней — 10000₸"])
+async def plan(message: types.Message):
+    ensure_user(message.from_user.id)
+    u = users[str(message.from_user.id)]
+
+    u["plan"] = 7 if "7" in message.text else 30
+    u["status"] = "pending"
+    save_users()
+
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("✅ Я оплатил")
+    kb.add("⬅️ Назад")
+
+    await message.answer(
+        f"💳 Kaspi: {KASPI}\n"
+        f"📦 {u['plan']} дней\n\n"
+        "После оплаты нажми кнопку",
+        reply_markup=kb
+    )
+
+# ===== PAYMENT =====
+@dp.message_handler(lambda m: m.text == "✅ Я оплатил")
+async def paid(message: types.Message):
+    user = message.from_user
+    u = users[str(user.id)]
+
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
+        InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
+    )
+    kb.add(InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}"))
+
+    await bot.send_message(
+        ADMIN_ID,
+        f"💰 ОПЛАТА\nID: {user.id}\nТариф: {u.get('plan')}",
+        reply_markup=kb
+    )
+
+    await message.answer("⏳ Ожидает подтверждения")
+
+# ===== CALLBACK =====
+@dp.callback_query_handler(lambda c: c.data.startswith("give_"))
+async def give(callback: types.CallbackQuery):
+    data = callback.data.split("_")
+    days = int(data[1])
+    uid = data[2]
+
+    u = users.get(uid, {})
+    u["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
+    u["status"] = "active"
+
+    users[uid] = u
+    save_users()
+
+    await bot.send_message(uid, f"🔥 Доступ открыт на {days} дней")
+    await callback.answer("OK")
+
+@dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
+async def deny(callback: types.CallbackQuery):
+    uid = callback.data.split("_")[1]
+    await bot.send_message(uid, "❌ Оплата отклонена")
+    await callback.answer("OK")
+
+# ===== QUESTION =====
 async def send_question(message, u):
     if not has_access(u):
         await message.answer("🔒 Нет доступа", reply_markup=main_kb())
         return
 
-    # 🔒 защита от дублей
     if u.get("waiting_answer"):
         return
 
@@ -176,23 +266,21 @@ async def send_question(message, u):
 
     text, ans, exp = ask_gpt(message.from_user.id)
 
-    if u.get("mode") == "exam":
+    if u["mode"] == "exam":
         u["exam_count"] += 1
+        text += f"\n\n📊 Вопрос {u['exam_count']}/20"
 
     u["correct_answer"] = ans
     u["explanation"] = exp
 
-    if u.get("mode") == "exam":
-        text += f"\n\n📊 Вопрос {u['exam_count']}/20"
-
     await message.answer(text, reply_markup=answer_kb())
     save_users()
 
+# ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A","B","C","D"])
 async def answer(message: types.Message):
     u = users[str(message.from_user.id)]
 
-    # 🔒 защита от дублей
     if not u.get("waiting_answer"):
         return
 
@@ -210,7 +298,7 @@ async def answer(message: types.Message):
     if u["explanation"]:
         await message.answer(f"📘 {u['explanation'][:200]}")
 
-    if u.get("mode") == "exam" and u["exam_count"] >= 20:
+    if u["mode"] == "exam" and u["exam_count"] >= 20:
         percent = int(u["exam_correct"]/20*100)
         await message.answer(f"Результат: {percent}%", reply_markup=main_kb())
         return
@@ -218,14 +306,18 @@ async def answer(message: types.Message):
     save_users()
     return await send_question(message, u)
 
+# ===== BACK =====
 @dp.message_handler(lambda m: m.text == "⬅️ Назад")
 async def back(message: types.Message):
     ensure_user(message.from_user.id)
-    users[str(message.from_user.id)]["mode"] = None
-    users[str(message.from_user.id)]["waiting_answer"] = False
+    u = users[str(message.from_user.id)]
+    u["mode"] = None
+    u["waiting_answer"] = False
     save_users()
+
     await message.answer("🏠 Главное меню", reply_markup=main_kb())
 
+# ===== STATS =====
 @dp.message_handler(lambda m: m.text == "📊 Статистика")
 async def stats(message: types.Message):
     u = users[str(message.from_user.id)]
@@ -240,5 +332,6 @@ async def stats(message: types.Message):
         f"{percent}%"
     )
 
+# ===== RUN =====
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
