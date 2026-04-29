@@ -38,7 +38,7 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
-users = {}
+users = load_users()
 last_questions = {}
 
 # ===== SAVE =====
