@@ -72,6 +72,12 @@ def answer_kb():
     kb.add("⬅️ Назад")
     return kb
 
+def buy_kb():
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("✅ Я оплатил")
+    kb.add("⬅️ Назад")
+    return kb
+
 # ===== GPT EXPLANATION =====
 async def explain(question, correct):
     prompt = f"""
@@ -186,6 +192,9 @@ async def back(message: types.Message):
 
     u["mode"] = None
     u["waiting_answer"] = False
+    
+    u["exam_index"] = 0
+    u["exam_questions"] = []
 
     await message.answer(
         "🚗 Подготовка к ПДД\n\nВыбери режим:",
@@ -196,9 +205,64 @@ async def back(message: types.Message):
 @dp.message_handler(lambda m: m.text == "💰 Купить доступ")
 async def buy(message: types.Message):
     await message.answer(
-        f"💳 Оплата Kaspi:\n{KASPI}\n\n"
-        "После оплаты напиши 'Оплатил' 🚀"
+        "💳 Оплата Kaspi:\n4400430352720152\n\nПосле оплаты нажми:",
+        reply_markup=buy_kb()
     )
+
+@dp.message_handler(lambda m: m.text == "✅ Я оплатил")
+async def paid(message: types.Message):
+    user = message.from_user
+
+username = f"@{user.username}" if user.username else "нет"    
+
+text = f"""
+💰 Новая заявка
+
+👤 Имя: {user.full_name}
+📛 Username: @{user.username}
+🆔 ID: {user.id}
+"""
+    kb = InlineKeyboardMarkup()
+
+    kb.add(
+        InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
+        InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
+    )
+    
+    kb.add(
+        InlineKeyboardButton("❌ Отказ", callback_data=f"deny_{user.id}")
+    )
+
+    await bot.send_message(ADMIN_ID, text, reply_markup=kb)
+
+    await message.answer("⏳ Заявка отправлена администратору")
+
+@dp.callback_query_handler(lambda c: True)
+async def admin_actions(callback: types.CallbackQuery):
+    data = callback.data
+
+    if "give_7_" in data:
+        user_id = data.split("_")[2]
+        days = 7
+
+    elif "give_30_" in data:
+        user_id = data.split("_")[2]
+        days = 30
+
+    elif "deny_" in data:
+        user_id = data.split("_")[1]
+
+        await bot.send_message(user_id, "❌ Оплата не подтверждена")
+        await callback.answer("Отказано")
+        return
+
+    # выдать доступ
+    u = users[str(user_id)]
+    u["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
+    save_json(USERS_FILE, users)
+
+    await bot.send_message(user_id, f"✅ Доступ выдан на {days} дней")
+    await callback.answer("Готово")
 
 # ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A", "B", "C", "D"])
@@ -224,6 +288,7 @@ async def answer(message: types.Message):
         await message.answer(f"❌ Неверно\nОтвет: {correct}")
     
     # следующий вопрос
+    u["waiting_answer"] = False
     await asyncio.sleep(0.3)
     
     if u["mode"] == "exam":
