@@ -357,20 +357,20 @@ async def answer(message: types.Message):
     if not has_access(u):
         await message.answer("🔒 Нет доступа", reply_markup=main_kb())
         return
-
-            msg = (
-                f"📊 Результат:\n"
-                f"{u['exam_correct']}/20\n"
-                f"{percent}%\n\n"
-            )
-
-            if percent < 80:
-                msg += "❌ Не сдал\n\n🔥 Пройди тренировку и попробуй снова"
-            else:
-                msg += "🔥 Отлично! Ты готов к экзамену"
-
-            await message.answer(msg, reply_markup=main_kb())
-            return
+    
+    msg = (
+        f"📊 Результат:\n"
+        f"{u['exam_correct']}/20\n"
+        f"{percent}%\n\n"
+    )
+    
+    if percent < 80:
+        msg += "❌ Не сдал\n\n🔥 Пройди тренировку и попробуй снова"
+    else:
+        msg += "🔥 Отлично! Ты готов к экзамену"
+    
+    await message.answer(msg, reply_markup=main_kb())
+    return
 
     save_users()
     await send_question(message, u)
