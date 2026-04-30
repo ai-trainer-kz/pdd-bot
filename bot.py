@@ -62,8 +62,8 @@ def has_access(u):
 # ===== UI =====
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🎯 Тренировка", "🧠 Экзамен")
-    kb.add("📊 Статистика")
+    kb.add("🧠 Экзамен", "🎯 Тренировка")
+    kb.add("📊 Статистика", "⬅️ Назад")
     return kb
 
 def answer_kb():
@@ -127,6 +127,13 @@ D) {q['D']}
 async def start(message: types.Message):
     ensure_user(message.from_user.id)
 
+    await message.answer(
+        "🚗 Подготовка к ПДД\n\nВыбери режим:",
+        reply_markup=main_kb()
+    )
+
+@dp.message_handler(lambda m: m.text == "⬅️ Назад")
+async def back(message: types.Message):
     await message.answer(
         "🚗 Подготовка к ПДД\n\nВыбери режим:",
         reply_markup=main_kb()
@@ -204,10 +211,7 @@ async def answer(message: types.Message):
         return
     # берем вопрос
     q = next(x for x in questions if x["id"] == u["question_id"])
-
-    explanation = await explain(q["question"], correct)
-    await message.answer("📘 Разбор скоро будет доступен")
-
+    
     save_json(USERS_FILE, users)
 
     await asyncio.sleep(0.5)
