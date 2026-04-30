@@ -100,57 +100,68 @@ def answer_kb():
 
 # ===== GPT =====
 async def ask_gpt(uid):
+    async def ask_gpt(uid):
     prompt = """
 Ты помощник для подготовки к экзамену ПДД Казахстан.
 
-Сгенерируй 1 новый вопрос по правилам дорожного движения.
+Сгенерируй 1 новый вопрос.
 
-Требования:
-- Пиши только на русском языке
-- Без приветствий и лишнего текста
-- Вопрос должен быть понятным и реальным (как на экзамене)
-- 4 варианта ответа (A, B, C, D)
-- Только 1 правильный ответ
-- Объяснение короткое и понятное
+Правила:
+- Только русский язык
+- Без приветствий
+- 4 варианта (A B C D)
+- 1 правильный ответ
+- Короткое объяснение
 
-Формат ответа строго такой:
+Формат:
 
 Вопрос:
-текст вопроса
+...
 
-A) вариант
-B) вариант
-C) вариант
-D) вариант
+A) ...
+B) ...
+C) ...
+D) ...
 
 Правильный ответ: A
-Объяснение: краткое объяснение
+Объяснение: ...
 """
 
     loop = asyncio.get_event_loop()
 
-    r = await loop.run_in_executor(
-        None,
-        lambda: client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.6
+    for _ in range(3):  # пробуем до 3 раз
+        r = await loop.run_in_executor(
+            None,
+            lambda: client.chat.completions.create(
+                model=MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.6
+            )
         )
-    )
 
-    text = r.choices[0].message.content
+        text = r.choices[0].message.content.strip()
 
-    # защита от мусора
-    if "Hello" in text or "assist" in text or len(text) < 50:
-        return await ask_gpt(uid)
+        # ❌ фильтр мусора
+        if (
+            "Hello" in text
+            or "assist" in text
+            or "?" not in text
+            or "A)" not in text
+            or "B)" not in text
+            or "Правильный ответ" not in text
+        ):
+            continue
 
-    ans = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
-    exp = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
+        ans = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
+        exp = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
 
-    question_only = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
-    question_only = re.sub(r"Объяснение.*", "", question_only, flags=re.S)
+        question_only = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
+        question_only = re.sub(r"Объяснение.*", "", question_only, flags=re.S)
 
-    return question_only, ans.group(1) if ans else "A", exp.group(1).strip() if exp else ""
+        return question_only, ans.group(1), exp.group(1).strip()
+
+    # если 3 раза не получилось — fallback
+    return "Ошибка генерации вопроса. Попробуй ещё раз.", "A", ""
 # ===== START =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
@@ -400,6 +411,10 @@ async def send_question(message, u):
         u["used_free"] += 1
 
     text, ans, exp = await ask_gpt(message.from_user.id)
+
+    if "Ошибка генерации" in text:
+    await message.answer(text)
+    return
     
     u["correct_answer"] = ans
     u["explanation"] = exp
