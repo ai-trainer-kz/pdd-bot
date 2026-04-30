@@ -101,13 +101,19 @@ def answer_kb():
 # ===== GPT =====
 async def ask_gpt(uid):
     prompt = """
-Ты строгий экзаменатор ПДД Казахстан.
+Ты помощник для подготовки к экзамену ПДД Казахстан.
 
-Отвечай ТОЛЬКО на русском языке.
+Сгенерируй 1 новый вопрос по правилам дорожного движения.
 
-Сгенерируй 1 вопрос с вариантами ответа.
+Требования:
+- Пиши только на русском языке
+- Без приветствий и лишнего текста
+- Вопрос должен быть понятным и реальным (как на экзамене)
+- 4 варианта ответа (A, B, C, D)
+- Только 1 правильный ответ
+- Объяснение короткое и понятное
 
-СТРОГИЙ ФОРМАТ (без отклонений):
+Формат ответа строго такой:
 
 Вопрос:
 текст вопроса
@@ -119,11 +125,32 @@ D) вариант
 
 Правильный ответ: A
 Объяснение: краткое объяснение
-
-НИЧЕГО ЛИШНЕГО НЕ ПИШИ.
-НЕ ПИШИ приветствия.
-НЕ ПИШИ на английском.
 """
+
+    loop = asyncio.get_event_loop()
+
+    r = await loop.run_in_executor(
+        None,
+        lambda: client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.6
+        )
+    )
+
+    text = r.choices[0].message.content
+
+    # защита от мусора
+    if "Hello" in text or "assist" in text or len(text) < 50:
+        return await ask_gpt(uid)
+
+    ans = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
+    exp = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
+
+    question_only = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
+    question_only = re.sub(r"Объяснение.*", "", question_only, flags=re.S)
+
+    return question_only, ans.group(1) if ans else "A", exp.group(1).strip() if exp else ""
 # ===== START =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
