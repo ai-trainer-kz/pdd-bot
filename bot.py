@@ -79,7 +79,7 @@ def buy_kb():
 async def send_question(message, u):
 
     if not has_access(u):
-        await message.answer(
+        u["waiting_answer"] = False(
             f"🔒 Доступ ограничен\n\nОплата Kaspi:\n{KASPI}",
             reply_markup=buy_kb()
         )
@@ -125,10 +125,11 @@ D) {q['D']}
 async def start(message: types.Message):
     ensure_user(message.from_user.id)
 
-    await message.answer(
-        "🚗 Подготовка к ПДД\n\nВыбери режим:",
-        reply_markup=main_kb()
-    )
+    async def show_menu(message):
+        await message.answer(
+            "🚗 Подготовка к ПДД\n\nВыбери режим:",
+            reply_markup=main_kb()
+        )
 
 # ===== МЕНЮ =====
 @dp.message_handler(lambda m: m.text in ["🧠 Экзамен", "🎯 Тренировка", "📊 Статистика", "⬅️ Назад"])
@@ -255,7 +256,6 @@ async def admin(callback: types.CallbackQuery):
 async def handler(message: types.Message):
     u = users[str(message.from_user.id)]
 
-    # 🔥 1. НАЗАД всегда первый
     if message.text == "⬅️ Назад":
         u["waiting_answer"] = False
         u["waiting_payment"] = False
@@ -264,13 +264,9 @@ async def handler(message: types.Message):
         await show_menu(message)
         return
 
-    # 🔥 2. ОПЛАТА
-    if message.text == "✅ Я оплатил":
-        if u.get("waiting_payment"):
-            await send_to_admin(message)
+        await show_menu(message)
         return
-
-    # 🔥 3. ОТВЕТЫ
+        
     if message.text in ["A", "B", "C", "D"]:
         if not u.get("waiting_answer"):
             return
@@ -279,6 +275,7 @@ async def handler(message: types.Message):
         ...
 
     u["waiting_answer"] = False
+    u["mode"] = None
 
     if message.text == u["correct_answer"]:
         u["correct"] += 1
