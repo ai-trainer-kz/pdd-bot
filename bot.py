@@ -177,10 +177,10 @@ async def answer(message: types.Message):
     if u["mode"] == "exam":
         u["exam_correct"] += 1
 
-    await message.answer("✅ Верно")
-else:
-    u["wrong"] += 1
-    await message.answer(f"❌ Неверно\nОтвет: {correct}")
+        await message.answer("✅ Верно")
+    else:
+        u["wrong"] += 1
+        await message.answer(f"❌ Неверно\nОтвет: {correct}")
 
     if u["mode"] == "exam":
         u["exam_index"] += 1
