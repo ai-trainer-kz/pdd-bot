@@ -163,6 +163,10 @@ async def start(message: types.Message):
 # ===== TRAIN =====
 @dp.message_handler(lambda m: m.text == "🎯 Тренировка")
 async def train(message: types.Message):
+
+    if u.get("waiting_payment"):
+        await message.answer("⏳ Сначала дождись подтверждения оплаты")
+        return
     u = users[str(message.from_user.id)]
     u["mode"] = "train"
 
@@ -170,6 +174,10 @@ async def train(message: types.Message):
 
 @dp.message_handler(lambda m: m.text == "🧠 Экзамен")
 async def exam(message: types.Message):
+
+    if u.get("waiting_payment"):
+        await message.answer("⏳ Сначала дождись подтверждения оплаты")
+        return
     u = users[str(message.from_user.id)]
 
     if u.get("waiting_payment"):
@@ -215,8 +223,13 @@ async def paid(message: types.Message):
     u = users[str(user.id)]
 
     # защита от спама
+    u = users[str(message.from_user.id)]
+    
     if u.get("waiting_payment"):
-        await message.answer("⏳ Ты уже отправил заявку, жди ответа")
+        await message.answer(
+            "⏳ Проверяем оплату...\nОжидай подтверждения",
+            reply_markup=main_kb()
+        )
         return
 
     u["waiting_payment"] = True
@@ -268,7 +281,7 @@ async def admin_actions(callback: types.CallbackQuery):
     # выдать доступ
     u = users[str(user_id)]
     u["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
-    u["waiting_payment"] = False
+    u["waiting_payment"] = True
     
     save_json(USERS_FILE, users)
     
@@ -282,6 +295,8 @@ async def answer(message: types.Message):
 
     if not u.get("waiting_answer"):
         return
+
+    u["waiting_answer"] = False
     
     user_answer = message.text
     correct = u["correct_answer"]
