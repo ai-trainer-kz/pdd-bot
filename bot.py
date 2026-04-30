@@ -136,9 +136,11 @@ async def menu(message: types.Message):
     u = users[str(message.from_user.id)]
 
     if message.text == "⬅️ Назад":
-        u["mode"] = None
         u["waiting_answer"] = False
-        await message.answer("Выбери режим:", reply_markup=main_kb())
+        u["mode"] = None
+        u["waiting_payment"] = False
+
+        await show_menu(message)
         return
 
     if message.text == "📊 Статистика":
