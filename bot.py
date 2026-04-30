@@ -172,7 +172,7 @@ async def answer(message: types.Message):
     correct = u["correct_answer"]
 
     if user_answer == correct:
-    u["correct"] += 1
+        u["correct"] += 1
 
     if u["mode"] == "exam":
         u["exam_correct"] += 1
