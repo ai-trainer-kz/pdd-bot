@@ -127,13 +127,6 @@ D) {q['D']}
 async def start(message: types.Message):
     ensure_user(message.from_user.id)
 
-@dp.message_handler(lambda m: m.text == "⬅️ Назад")
-async def back(message: types.Message):
-    u = users[str(message.from_user.id)]
-    
-    u["mode"] = None
-    u["waiting_answer"] = False
-
     await message.answer(
         "🚗 Подготовка к ПДД\n\nВыбери режим:",
         reply_markup=main_kb()
@@ -166,56 +159,51 @@ def start_exam(u):
     u["exam_correct"] = 0
 
 # ===== ANSWER =====
-@dp.message_handler(lambda m: m.text in ["A","B","C","D"])
+@dp.message_handler(lambda m: m.text in ["A", "B", "C", "D"])
 async def answer(message: types.Message):
     u = users[str(message.from_user.id)]
 
-    if not u["waiting_answer"]:
+    if not u.get("waiting_answer"):
         return
-
-    u["waiting_answer"] = False
 
     user_answer = message.text
     correct = u["correct_answer"]
 
+    # проверка
     if user_answer == correct:
         u["correct"] += 1
-    
+
         if u["mode"] == "exam":
             u["exam_correct"] += 1
-    
+
         await message.answer("✅ Верно")
-    
     else:
         u["wrong"] += 1
         await message.answer(f"❌ Неверно\nОтвет: {correct}")
 
+    # экзамен логика
     if u["mode"] == "exam":
         u["exam_index"] += 1
 
-    if u["exam_index"] >= len(u["exam_questions"]):
-        percent = int(u["exam_correct"] / len(u["exam_questions"]) * 100)
+        if u["exam_index"] >= len(u["exam_questions"]):
+            percent = int(u["exam_correct"] / len(u["exam_questions"]) * 100)
 
-        if percent >= 80:
-            result = "✅ СДАЛ"
-        else:
-            result = "❌ НЕ СДАЛ"
+            result = "✅ СДАЛ" if percent >= 80 else "❌ НЕ СДАЛ"
 
-        await message.answer(
-            f"📊 Экзамен завершён\n\n"
-            f"{u['exam_correct']}/{len(u['exam_questions'])}\n"
-            f"{percent}%\n"
-            f"{result}"
-        )
+            await message.answer(
+                f"📊 Экзамен завершён\n\n"
+                f"{u['exam_correct']}/{len(u['exam_questions'])}\n"
+                f"{percent}%\n"
+                f"{result}"
+            )
 
-        u["mode"] = None
-        return
-    
-    save_json(USERS_FILE, users)
+            u["mode"] = None
+            return
 
+    # следующий вопрос
+    u["waiting_answer"] = False
     await asyncio.sleep(0.5)
     await send_question(message, u)
-
 # ===== STATS =====
 @dp.message_handler(lambda m: m.text == "📊 Статистика")
 async def stats(message: types.Message):
