@@ -100,7 +100,6 @@ def answer_kb():
 
 # ===== GPT =====
 async def ask_gpt(uid):
-    async def ask_gpt(uid):
     prompt = """
 Ты помощник для подготовки к экзамену ПДД Казахстан.
 
