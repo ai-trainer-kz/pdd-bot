@@ -12,6 +12,9 @@ from openai import OpenAI
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+ADMIN_ID = 503301815
+KASPI = "4400430352720152"
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -59,7 +62,8 @@ def has_access(u):
 # ===== UI =====
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🎯 Тренировка", "📊 Статистика")
+    kb.add("🎯 Тренировка", "🧠 Экзамен")
+    kb.add("📊 Статистика")
     return kb
 
 def answer_kb():
@@ -133,6 +137,18 @@ async def start(message: types.Message):
 async def train(message: types.Message):
     u = users[str(message.from_user.id)]
     u["mode"] = "train"
+
+    await send_question(message, u)
+
+@dp.message_handler(lambda m: m.text == "🧠 Экзамен")
+async def exam(message: types.Message):
+    u = users[str(message.from_user.id)]
+
+    u["mode"] = "exam"
+
+    start_exam(u)  # ВАЖНО!
+
+    await message.answer("🧠 Экзамен начался (20 вопросов)")
 
     await send_question(message, u)
 
