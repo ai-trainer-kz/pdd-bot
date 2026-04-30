@@ -90,7 +90,11 @@ async def explain(question, correct):
 
 # ===== SEND QUESTION =====
 async def send_question(message, u):
-    q = random.choice(questions)
+    
+    if u["mode"] == "exam":
+        q = u["exam_questions"][u["exam_index"]]
+    else:
+        q = random.choice(questions)
 
     u["question_id"] = q["id"]
     u["correct_answer"] = q["correct"]
@@ -132,6 +136,12 @@ async def train(message: types.Message):
 
     await send_question(message, u)
 
+def start_exam(u):
+    count = min(20, len(questions))
+    u["exam_questions"] = random.sample(questions, count)
+    u["exam_index"] = 0
+    u["exam_correct"] = 0
+
 # ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A","B","C","D"])
 async def answer(message: types.Message):
@@ -152,6 +162,27 @@ async def answer(message: types.Message):
         u["wrong"] += 1
         await message.answer(f"❌ Неверно\nОтвет: {correct}")
 
+    if u["mode"] == "exam":
+    u["exam_index"] += 1
+
+    if u["exam_index"] >= len(u["exam_questions"]):
+        percent = int(u["exam_correct"] / len(u["exam_questions"]) * 100)
+
+        if percent >= 80:
+            result = "✅ СДАЛ"
+        else:
+            result = "❌ НЕ СДАЛ"
+
+        await message.answer(
+            f"📊 Экзамен завершён\n\n"
+            f"{u['exam_correct']}/{len(u['exam_questions'])}\n"
+            f"{percent}%\n"
+            f"{result}"
+        )
+
+        u["mode"] = None
+        return
+
     # берем вопрос
     q = next(x for x in questions if x["id"] == u["question_id"])
 
@@ -167,13 +198,18 @@ async def answer(message: types.Message):
 @dp.message_handler(lambda m: m.text == "📊 Статистика")
 async def stats(message: types.Message):
     u = users[str(message.from_user.id)]
-    total = u["correct"] + u["wrong"]
-    percent = int(u["correct"]/total*100) if total else 0
 
-    await message.answer(
-        f"📊\nПравильно: {u['correct']}\nОшибки: {u['wrong']}\n{percent}%"
+    total = u["correct"] + u["wrong"]
+    percent = int(u["correct"] / total * 100) if total else 0
+
+    msg = (
+        f"📊 Общая статистика\n\n"
+        f"✅ Правильно: {u['correct']}\n"
+        f"❌ Ошибки: {u['wrong']}\n"
+        f"📈 Успешность: {percent}%"
     )
 
+    await message.answer(msg)
 # ===== RUN =====
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
