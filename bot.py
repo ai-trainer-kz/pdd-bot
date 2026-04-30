@@ -165,44 +165,26 @@ async def answer(message: types.Message):
 
     if not u.get("waiting_answer"):
         return
-
+    
     user_answer = message.text
     correct = u["correct_answer"]
-
+    
     # проверка
     if user_answer == correct:
         u["correct"] += 1
-
+    
         if u["mode"] == "exam":
             u["exam_correct"] += 1
-
+    
         await message.answer("✅ Верно")
     else:
         u["wrong"] += 1
         await message.answer(f"❌ Неверно\nОтвет: {correct}")
-
-    # экзамен логика
-    if u["mode"] == "exam":
-        u["exam_index"] += 1
-
-        if u["exam_index"] >= len(u["exam_questions"]):
-            percent = int(u["exam_correct"] / len(u["exam_questions"]) * 100)
-
-            result = "✅ СДАЛ" if percent >= 80 else "❌ НЕ СДАЛ"
-
-            await message.answer(
-                f"📊 Экзамен завершён\n\n"
-                f"{u['exam_correct']}/{len(u['exam_questions'])}\n"
-                f"{percent}%\n"
-                f"{result}"
-            )
-
-            u["mode"] = None
-            return
-
+    
     # следующий вопрос
+    await asyncio.sleep(0.3)
+    
     u["waiting_answer"] = False
-    await asyncio.sleep(0.5)
     await send_question(message, u)
 # ===== STATS =====
 @dp.message_handler(lambda m: m.text == "📊 Статистика")
