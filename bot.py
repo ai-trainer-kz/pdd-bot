@@ -105,12 +105,11 @@ async def ask_gpt(uid):
 
 СТРОГИЕ ПРАВИЛА:
 - Только русский язык
-- Никакого английского
-- Без приветствий
-- Всегда 4 варианта: A B C D
-- Правильный ответ ТОЛЬКО ОДНА БУКВА
+- Без английского
+- Всегда 4 варианта A B C D
+- Правильный ответ = одна буква
 
-Формат строго:
+Формат:
 
 Вопрос:
 ...
@@ -123,9 +122,10 @@ D) ...
 Правильный ответ: A
 Объяснение: ...
 """
+
     loop = asyncio.get_event_loop()
 
-    for _ in range(3):  # пробуем до 3 раз
+    for _ in range(3):
         r = await loop.run_in_executor(
             None,
             lambda: client.chat.completions.create(
@@ -137,26 +137,21 @@ D) ...
 
         text = r.choices[0].message.content.strip()
 
-        # ❌ фильтр мусора
-        if (
-            "Hello" in text
-            or "assist" in text
-            or "?" not in text
-            or "A)" not in text
-            or "B)" not in text
-            or "Правильный ответ" not in text
-        ):
+        if "A)" not in text or "Правильный ответ" not in text:
             continue
 
         ans_match = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
-
         if not ans_match:
             continue
-        
+
         ans = ans_match.group(1)
-        
+
         exp_match = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
         exp = exp_match.group(1).strip() if exp_match else ""
+
+        return text, ans, exp  # 🔥 ВОТ ЭТОГО НЕ БЫЛО
+
+    return None, None, None
     
 # ===== START =====
 @dp.message_handler(commands=['start'])
@@ -350,24 +345,29 @@ async def deny(callback: types.CallbackQuery):
     
 # ===== QUESTION =====
 async def send_question(message, u):
-    if u.get("waiting_answer"):
+    if u.get("processing"):
         return
 
-    u["waiting_answer"] = False
+    u["processing"] = True
 
     msg = await message.answer("⏳ Загружаю вопрос...")
 
-    text, ans, exp = await ask_gpt(message.from_user.id)
+    text, correct, exp = await ask_gpt(message.from_user.id)
 
-    await msg.delete()
+    if not text:
+        await msg.edit_text("❌ Ошибка загрузки")
+        u["processing"] = False
+        return
 
-    u["correct_answer"] = str(ans).strip().upper()
+    u["correct_answer"] = correct
     u["explanation"] = exp
     u["waiting_answer"] = True
 
     save_users()
 
-    await message.answer(text, reply_markup=answer_kb())
+    await msg.edit_text(text, reply_markup=answer_kb())
+
+    u["processing"] = False
 # ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A","B","C","D"])
 async def answer(message: types.Message):
@@ -425,15 +425,12 @@ async def answer(message: types.Message):
             u["processing"] = False
             return
 
-    await asyncio.sleep(0.3)
+if u["mode"] in ["train", "exam"]:
+    await asyncio.sleep(0.4)
     await send_question(message, u)
-
-    u["processing"] = False
-    save_users()
-
-    if u["mode"] in ["train", "exam"]:
-        await asyncio.sleep(0.4)
-        await send_question(message, u)
+    
+u["processing"] = False
+save_users()
 # ===== BACK =====
 @dp.message_handler(lambda m: m.text == "⬅️ Назад")
 async def back(message: types.Message):
