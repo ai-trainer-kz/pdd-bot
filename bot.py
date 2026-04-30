@@ -77,11 +77,13 @@ def ensure_user(uid):
 
 def has_access(u):
     try:
-        if u["premium_until"] and datetime.now() < datetime.fromisoformat(u["premium_until"]):
-            return True
+        if u.get("premium_until"):
+            if datetime.now() < datetime.fromisoformat(u["premium_until"]):
+                return True
     except:
         pass
-    return u["used_free"] < u["free_limit"]
+
+    return u.get("used_free", 0) < u.get("free_limit", 5)
 
 # ===== UI =====
 def main_kb():
@@ -282,12 +284,16 @@ async def paid(message: types.Message):
 async def give_7(callback: types.CallbackQuery):
     user_id = callback.data.split("_")[2]
 
-    u = users.get(user_id, {})
+    if user_id not in users:
+        users[user_id] = {}
+
+    u = users[user_id]
+
     u["status"] = "active"
     u["plan"] = 7
-    u["premium_until"]  = (datetime.now() + timedelta(days=7)).isoformat()
+    u["premium_until"] = (datetime.now() + timedelta(days=7)).isoformat()
+    u["used_free"] = 0
 
-    users[user_id] = u
     save_users()
 
     await bot.send_message(user_id, "🔥 Доступ открыт на 7 дней")
