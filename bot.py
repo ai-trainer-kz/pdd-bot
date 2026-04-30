@@ -69,6 +69,7 @@ def main_kb():
 def answer_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("A","B","C","D")
+    kb.add("⬅️ Назад")
     return kb
 
 # ===== GPT EXPLANATION =====
@@ -94,9 +95,24 @@ async def explain(question, correct):
 
 # ===== SEND QUESTION =====
 async def send_question(message, u):
-    
+
+    if not questions:
+        await message.answer("Нет вопросов в базе")
+        return
+
+    # ===== ЭКЗАМЕН =====
     if u["mode"] == "exam":
+        if u["exam_index"] >= len(u["exam_questions"]):
+            await message.answer(
+                f"🏁 Экзамен завершён\n\n"
+                f"Правильных: {u['exam_correct']} из {len(u['exam_questions'])}"
+            )
+            u["mode"] = None
+            return
+
         q = u["exam_questions"][u["exam_index"]]
+
+    # ===== ТРЕНИРОВКА =====
     else:
         q = random.choice(questions)
 
@@ -104,8 +120,13 @@ async def send_question(message, u):
     u["correct_answer"] = q["correct"]
     u["waiting_answer"] = True
 
+    # ===== ДОСТУП =====
     if not has_access(u):
-        await message.answer("🔒 Купи доступ")
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        kb.add("💰 Купить доступ")
+        kb.add("⬅️ Назад")
+
+        await message.answer("🔒 Доступ ограничен", reply_markup=kb)
         return
 
     u["used_free"] += 1
@@ -158,6 +179,27 @@ def start_exam(u):
     u["exam_index"] = 0
     u["exam_correct"] = 0
 
+# ===== BACK =====
+@dp.message_handler(lambda m: m.text == "⬅️ Назад")
+async def back(message: types.Message):
+    u = users[str(message.from_user.id)]
+
+    u["mode"] = None
+    u["waiting_answer"] = False
+
+    await message.answer(
+        "🚗 Подготовка к ПДД\n\nВыбери режим:",
+        reply_markup=main_kb()
+    )
+
+# ===== BUY =====   
+@dp.message_handler(lambda m: m.text == "💰 Купить доступ")
+async def buy(message: types.Message):
+    await message.answer(
+        f"💳 Оплата Kaspi:\n{KASPI}\n\n"
+        "После оплаты напиши 'Оплатил' 🚀"
+    )
+
 # ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A", "B", "C", "D"])
 async def answer(message: types.Message):
@@ -184,8 +226,12 @@ async def answer(message: types.Message):
     # следующий вопрос
     await asyncio.sleep(0.3)
     
-    u["waiting_answer"] = False
+    if u["mode"] == "exam":
+        u["exam_index"] += 1
+    
     await send_question(message, u)
+    
+    
 # ===== STATS =====
 @dp.message_handler(lambda m: m.text == "📊 Статистика")
 async def stats(message: types.Message):
