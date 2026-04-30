@@ -99,7 +99,7 @@ def answer_kb():
     return kb
 
 # ===== GPT =====
-def ask_gpt(uid):
+async def ask_gpt(uid):
     prompt = """
 Ты экзаменатор ПДД Казахстан.
 
@@ -119,10 +119,14 @@ D) ...
 Объяснение: кратко
 """
 
-    r = client.chat.completions.create(
-        model=MODEL,
-        messages=[{"role":"user","content":prompt}],
-        temperature=0.8
+    loop = asyncio.get_event_loop()
+    r = await loop.run_in_executor(
+        None,
+        lambda: client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role":"user","content":prompt}],
+            temperature=0.8
+        )
     )
 
     text = r.choices[0].message.content
@@ -338,7 +342,7 @@ async def send_question(message, u):
     if not u["premium_until"]:
         u["used_free"] += 1
 
-    text, ans, exp = ask_gpt(message.from_user.id)
+    text, ans, exp = await ask_gpt(message.from_user.id)
 
     u["correct_answer"] = ans
     u["explanation"] = exp
@@ -355,7 +359,14 @@ async def send_question(message, u):
 async def answer(message: types.Message):
     u = users[str(message.from_user.id)]
 
+    if u.get("processing"):
+        return
+
+    u["processing"] = True
+
     if not u.get("waiting_answer"):
+        await message.answer("⏳ Подожди вопрос...")
+        u["processing"] = False
         return
 
     u["waiting_answer"] = False
@@ -372,6 +383,11 @@ async def answer(message: types.Message):
     if u["explanation"]:
         await message.answer(f"📘 {u['explanation'][:200]}")
 
+    await asyncio.sleep(0.3)
+    await send_question(message, u)
+
+    u["processing"] = False
+    
     # ===== ЭКЗАМЕН =====
     if u["mode"] == "exam":
         u["exam_count"] += 1
