@@ -180,6 +180,14 @@ async def buy(message: types.Message):
         reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Я оплатил")
     )
 
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+def payment_kb():
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add(KeyboardButton("✅ Я оплатил"))
+    kb.add(KeyboardButton("⬅️ Назад"))
+    return kb
+
 @dp.message_handler(lambda m: m.text == "✅ Я оплатил")
 async def paid(message: types.Message):
     user = message.from_user
@@ -243,12 +251,32 @@ async def admin(callback: types.CallbackQuery):
     await callback.answer("OK")
 
 # ===== ОТВЕТ =====
-@dp.message_handler(lambda m: m.text in ["A", "B", "C", "D"])
-async def answer(message: types.Message):
+@dp.message_handler()
+async def handler(message: types.Message):
     u = users[str(message.from_user.id)]
 
-    if not u.get("waiting_answer"):
+    # 🔥 1. НАЗАД всегда первый
+    if message.text == "⬅️ Назад":
+        u["waiting_answer"] = False
+        u["waiting_payment"] = False
+        u["mode"] = None
+
+        await show_menu(message)
         return
+
+    # 🔥 2. ОПЛАТА
+    if message.text == "✅ Я оплатил":
+        if u.get("waiting_payment"):
+            await send_to_admin(message)
+        return
+
+    # 🔥 3. ОТВЕТЫ
+    if message.text in ["A", "B", "C", "D"]:
+        if not u.get("waiting_answer"):
+            return
+
+        # твоя логика ответа
+        ...
 
     u["waiting_answer"] = False
 
