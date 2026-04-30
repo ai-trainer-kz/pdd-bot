@@ -315,6 +315,9 @@ async def send_question(message, u):
         )
         return
 
+    if u.get("waiting_answer"):
+        return
+
     if not u["premium_until"]:
         u["used_free"] += 1
 
@@ -322,6 +325,7 @@ async def send_question(message, u):
 
     u["correct_answer"] = ans
     u["explanation"] = exp
+    u["waiting_answer"] = True
 
     progress = ""
     if u["mode"] == "exam":
@@ -329,11 +333,13 @@ async def send_question(message, u):
 
     await message.answer(text + progress, reply_markup=answer_kb())
     save_users()
-
 # ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A","B","C","D"])
 async def answer(message: types.Message):
     u = users[str(message.from_user.id)]
+
+    if not u.get("waiting_answer"):
+        return
 
     u["waiting_answer"] = False
 
@@ -349,42 +355,44 @@ async def answer(message: types.Message):
     if u["explanation"]:
         await message.answer(f"📘 {u['explanation'][:200]}")
 
+    # ===== ЭКЗАМЕН =====
     if u["mode"] == "exam":
         u["exam_count"] += 1
-        if u["exam_count"] >= 20:
-            percent = int(u["exam_correct"]/20*100)
 
-    if not has_access(u):
-        await message.answer("🔒 Нет доступа", reply_markup=main_kb())
-        return
-    
-    msg = (
-        f"📊 Результат:\n"
-        f"{u['exam_correct']}/20\n"
-        f"{percent}%\n\n"
-    )
-    
-    if percent < 80:
-        msg += "❌ Не сдал\n\n🔥 Пройди тренировку и попробуй снова"
-    else:
-        msg += "🔥 Отлично! Ты готов к экзамену"
-    
-    await message.answer(msg, reply_markup=main_kb())
-    return
+        if u["exam_count"] >= 20:
+            percent = int(u["exam_correct"] / 20 * 100)
+
+            msg = (
+                f"📊 Результат:\n"
+                f"{u['exam_correct']}/20\n"
+                f"{percent}%\n\n"
+            )
+
+            if percent < 80:
+                msg += "❌ Не сдал\n\n🔥 Пройди тренировку и попробуй снова"
+            else:
+                msg += "🔥 Отлично! Ты готов к экзамену"
+
+            await message.answer(msg, reply_markup=main_kb())
+            save_users()
+            return
 
     save_users()
-    await send_question(message, u)
 
+    if u["mode"] in ["train", "exam"]:
+        await send_question(message, u)
 # ===== BACK =====
 @dp.message_handler(lambda m: m.text == "⬅️ Назад")
 async def back(message: types.Message):
     ensure_user(message.from_user.id)
-    users[str(message.from_user.id)]["mode"] = None
+    u = users[str(message.from_user.id)]
+
+    u["mode"] = None
+    u["waiting_answer"] = False
+
     save_users()
 
     await message.answer("🏠 Главное меню", reply_markup=main_kb())
-    u["waiting_answer"] = False
-
 # ===== STATS =====
 @dp.message_handler(lambda m: m.text == "📊 Статистика")
 async def stats(message: types.Message):
