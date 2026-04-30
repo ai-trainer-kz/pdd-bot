@@ -5,6 +5,12 @@ from datetime import datetime, timedelta
 import re
 import asyncio
 
+try:
+    text = await asyncio.wait_for(ask_gpt(), timeout=15)
+except asyncio.TimeoutError:
+    await message.answer("❌ GPT долго отвечает")
+    return
+
 USERS_FILE = "users.json"
 
 def load_users():
@@ -99,29 +105,15 @@ def answer_kb():
     return kb
 
 # ===== GPT =====
-async def ask_gpt(uid):
-    prompt = """
-Ты генератор тестов ПДД Казахстана.
+async def ask_gpt():
+    return """Вопрос: Какой сигнал светофора разрешает движение?
+A) Красный
+B) Желтый
+C) Зеленый
+D) Мигающий красный
 
-СТРОГИЕ ПРАВИЛА:
-- Только русский язык
-- Без английского
-- Всегда 4 варианта A B C D
-- Правильный ответ = одна буква
-
-Формат:
-
-Вопрос:
-...
-
-A) ...
-B) ...
-C) ...
-D) ...
-
-Правильный ответ: A
-Объяснение: ...
-"""
+Правильный ответ: C
+Объяснение: Зеленый сигнал разрешает движение."""
 
     loop = asyncio.get_event_loop()
 
@@ -353,11 +345,18 @@ async def send_question(message, u):
     msg = await message.answer("⏳ Загружаю вопрос...")
 
     text, correct, exp = await ask_gpt(message.from_user.id)
+    
+    print("GPT RAW:", text)
 
-    if not text:
-        await msg.edit_text("❌ Ошибка загрузки")
-        u["processing"] = False
-        return
+    if not text or "Вопрос:" not in text:
+        text = """Вопрос: Какой сигнал разрешает движение?
+    A) Красный
+    B) Желтый
+    C) Зеленый
+    D) Мигающий
+
+Правильный ответ: C
+Объяснение: Зеленый разрешает движение."""
 
     u["correct_answer"] = correct
     u["explanation"] = exp
