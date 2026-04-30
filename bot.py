@@ -100,44 +100,41 @@ def answer_kb():
 
 # ===== GPT =====
 async def ask_gpt():
-    return """Вопрос: Какой сигнал светофора разрешает движение?
-A) Красный
-B) Желтый
-C) Зеленый
-D) Мигающий красный
 
-Правильный ответ: C
-Объяснение: Зеленый сигнал разрешает движение."""
+    prompt = """
+Ты строгий экзаменатор ПДД Казахстана.
 
-    loop = asyncio.get_event_loop()
+Задавай ОДИН вопрос в формате:
 
-    for _ in range(3):
-        r = await loop.run_in_executor(
-            None,
-            lambda: client.chat.completions.create(
-                model=MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.6
-            )
+Вопрос: ...
+A) ...
+B) ...
+C) ...
+D) ...
+
+Правильный ответ: X
+Объяснение: кратко и по делу
+
+ВАЖНО:
+- Только 1 правильный ответ
+- Ответ всегда A, B, C или D
+- Не пиши лишнего текста
+- Без приветствий
+- Без английского
+"""
+
+    try:
+        response = await client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5
         )
 
-        text = r.choices[0].message.content.strip()
+        return response.choices[0].message.content
 
-        if "A)" not in text or "Правильный ответ" not in text:
-            continue
-
-        ans_match = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
-        if not ans_match:
-            continue
-
-        ans = ans_match.group(1)
-
-        exp_match = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
-        exp = exp_match.group(1).strip() if exp_match else ""
-
-        return text, ans, exp  # 🔥 ВОТ ЭТОГО НЕ БЫЛО
-
-    return None, None, None
+    except Exception as e:
+        print("GPT ERROR:", e)
+        return None
     
 # ===== START =====
 @dp.message_handler(commands=['start'])
