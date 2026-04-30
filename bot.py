@@ -127,13 +127,13 @@ D) {q['D']}
 async def start(message: types.Message):
     ensure_user(message.from_user.id)
 
-    await message.answer(
-        "🚗 Подготовка к ПДД\n\nВыбери режим:",
-        reply_markup=main_kb()
-    )
-
 @dp.message_handler(lambda m: m.text == "⬅️ Назад")
 async def back(message: types.Message):
+    u = users[str(message.from_user.id)]
+    
+    u["mode"] = None
+    u["waiting_answer"] = False
+
     await message.answer(
         "🚗 Подготовка к ПДД\n\nВыбери режим:",
         reply_markup=main_kb()
@@ -180,11 +180,12 @@ async def answer(message: types.Message):
 
     if user_answer == correct:
         u["correct"] += 1
-
-    if u["mode"] == "exam":
-        u["exam_correct"] += 1
-
+    
+        if u["mode"] == "exam":
+            u["exam_correct"] += 1
+    
         await message.answer("✅ Верно")
+    
     else:
         u["wrong"] += 1
         await message.answer(f"❌ Неверно\nОтвет: {correct}")
@@ -209,8 +210,6 @@ async def answer(message: types.Message):
 
         u["mode"] = None
         return
-    # берем вопрос
-    q = next(x for x in questions if x["id"] == u["question_id"])
     
     save_json(USERS_FILE, users)
 
