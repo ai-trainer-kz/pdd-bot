@@ -69,7 +69,8 @@ def ensure_user(uid):
             "correct": 0,
             "wrong": 0,
             "exam_count": 0,
-            "exam_correct": 0
+            "exam_correct": 0,
+            "waiting_answer": False
         }
         save_users()
 
@@ -153,8 +154,11 @@ async def start(message: types.Message):
 # ===== MODE =====
 @dp.message_handler(lambda m: m.text == "🎯 Тренировка")
 async def train(message: types.Message):
+    ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
+
     u["mode"] = "train"
+    u["waiting_answer"] = False
 
     if not has_access(u):
         await message.answer(
@@ -164,18 +168,24 @@ async def train(message: types.Message):
         )
         return
 
-    await send_question(message, u)
+    return await send_question(message, u)
 
 @dp.message_handler(lambda m: m.text == "🧠 Экзамен")
 async def exam(message: types.Message):
+    ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
+
     u["mode"] = "exam"
     u["exam_count"] = 0
     u["exam_correct"] = 0
+    u["waiting_answer"] = False
+
+    if not has_access(u):
+        await message.answer("🔒 Нет доступа", reply_markup=main_kb())
+        return
 
     await message.answer("🧠 Экзамен: 20 вопросов")
-    await send_question(message, u)
-
+    return await send_question(message, u)
 # ===== BUY =====
 @dp.message_handler(lambda m: "Купить" in m.text)
 async def buy(message: types.Message):
@@ -325,6 +335,8 @@ async def send_question(message, u):
 async def answer(message: types.Message):
     u = users[str(message.from_user.id)]
 
+    u["waiting_answer"] = False
+
     if message.text == u["correct_answer"]:
         u["correct"] += 1
         if u["mode"] == "exam":
@@ -341,6 +353,10 @@ async def answer(message: types.Message):
         u["exam_count"] += 1
         if u["exam_count"] >= 20:
             percent = int(u["exam_correct"]/20*100)
+
+    if not has_access(u):
+        await message.answer("🔒 Нет доступа", reply_markup=main_kb())
+        return
 
             msg = (
                 f"📊 Результат:\n"
@@ -367,6 +383,7 @@ async def back(message: types.Message):
     save_users()
 
     await message.answer("🏠 Главное меню", reply_markup=main_kb())
+    u["waiting_answer"] = False
 
 # ===== STATS =====
 @dp.message_handler(lambda m: m.text == "📊 Статистика")
