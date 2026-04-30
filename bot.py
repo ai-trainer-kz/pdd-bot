@@ -425,12 +425,12 @@ async def answer(message: types.Message):
             u["processing"] = False
             return
 
-if u["mode"] in ["train", "exam"]:
-    await asyncio.sleep(0.4)
-    await send_question(message, u)
-    
-u["processing"] = False
-save_users()
+    if u["mode"] in ["train", "exam"]:
+        await asyncio.sleep(0.4)
+        await send_question(message, u)
+        
+    u["processing"] = False
+    save_users()
 # ===== BACK =====
 @dp.message_handler(lambda m: m.text == "⬅️ Назад")
 async def back(message: types.Message):
