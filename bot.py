@@ -171,6 +171,12 @@ async def train(message: types.Message):
 async def exam(message: types.Message):
     u = users[str(message.from_user.id)]
 
+    if u.get("waiting_payment"):
+        await message.answer("⏳ Ты уже отправил заявку, жди ответа")
+        return
+    
+    u["waiting_payment"] = True
+
     u["mode"] = "exam"
 
     start_exam(u)  # ВАЖНО!
@@ -233,9 +239,11 @@ async def paid(message: types.Message):
     kb.add(
         InlineKeyboardButton("❌ Отказ", callback_data=f"deny_{user.id}")
     )
+    u["waiting_payment"] = False
 
     await bot.send_message(ADMIN_ID, text, reply_markup=kb)
-    await message.answer("⏳ Заявка отправлена администратору")
+    await message.answer("⏳ Проверяем оплату... Ожидай подтверждения")
+    await bot.send_message(user_id, "✅ Оплата подтверждена! Доступ открыт 🚀")
     
 @dp.callback_query_handler(lambda c: True)
 async def admin_actions(callback: types.CallbackQuery):
@@ -289,7 +297,6 @@ async def answer(message: types.Message):
     
     # следующий вопрос
     u["waiting_answer"] = False
-    await asyncio.sleep(0.3)
     
     if u["mode"] == "exam":
         u["exam_index"] += 1
