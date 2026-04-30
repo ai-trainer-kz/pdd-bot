@@ -247,7 +247,7 @@ async def plan(message: types.Message):
         u["plan"] = 7
     else:
         u["plan"] = 30
-
+    users[str(message.from_user.id)] = u
     save_users()
 
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -394,36 +394,20 @@ async def deny(callback: types.CallbackQuery):
     
 # ===== QUESTION =====
 async def send_question(message, u):
-    if not has_access(u):
-        await message.answer(
-            "🔒 Бесплатные вопросы закончились\n\n"
-            "🔥 Открой полный доступ и готовься без ограничений\n"
-            "💯 Сдашь с первого раза",
-            reply_markup=main_kb()
-        )
-        return
-
     if u.get("waiting_answer"):
         return
 
-    if not u["premium_until"]:
-        u["used_free"] += 1
+    msg = await message.answer("⏳ Загружаю вопрос...")  
 
     text, ans, exp = await ask_gpt(message.from_user.id)
 
-    if "Ошибка генерации" in text:
-        await message.answer(text)
-        return
-        
+    await msg.delete()  
+
     u["correct_answer"] = ans
     u["explanation"] = exp
     u["waiting_answer"] = True
 
-    progress = ""
-    if u["mode"] == "exam":
-        progress = f"\n\n📊 Вопрос {u['exam_count'] + 1}/20"
-
-    await message.answer(text + progress, reply_markup=answer_kb())
+    await message.answer(text, reply_markup=answer_kb())
     save_users()
 # ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A","B","C","D"])
