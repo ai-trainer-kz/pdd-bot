@@ -172,11 +172,15 @@ async def answer(message: types.Message):
     correct = u["correct_answer"]
 
     if user_answer == correct:
-        u["correct"] += 1
-        await message.answer("✅ Верно")
-    else:
-        u["wrong"] += 1
-        await message.answer(f"❌ Неверно\nОтвет: {correct}")
+    u["correct"] += 1
+
+    if u["mode"] == "exam":
+        u["exam_correct"] += 1
+
+    await message.answer("✅ Верно")
+else:
+    u["wrong"] += 1
+    await message.answer(f"❌ Неверно\nОтвет: {correct}")
 
     if u["mode"] == "exam":
         u["exam_index"] += 1
@@ -198,12 +202,11 @@ async def answer(message: types.Message):
 
         u["mode"] = None
         return
-
     # берем вопрос
     q = next(x for x in questions if x["id"] == u["question_id"])
 
     explanation = await explain(q["question"], correct)
-    await message.answer(f"📘 {explanation}")
+    await message.answer("📘 Разбор скоро будет доступен")
 
     save_json(USERS_FILE, users)
 
