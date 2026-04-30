@@ -100,28 +100,30 @@ def answer_kb():
 
 # ===== GPT =====
 async def ask_gpt(uid):
-    prompt = """..."""
+    prompt = """
+Ты строгий экзаменатор ПДД Казахстан.
 
-    loop = asyncio.get_event_loop()
+Отвечай ТОЛЬКО на русском языке.
 
-    r = await loop.run_in_executor(
-        None,
-        lambda: client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.8
-        )
-    )
+Сгенерируй 1 вопрос с вариантами ответа.
 
-    text = r.choices[0].message.content
+СТРОГИЙ ФОРМАТ (без отклонений):
 
-    ans = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
-    exp = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
+Вопрос:
+текст вопроса
 
-    question_only = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
-    question_only = re.sub(r"Объяснение.*", "", question_only, flags=re.S)
+A) вариант
+B) вариант
+C) вариант
+D) вариант
 
-    return question_only, ans.group(1) if ans else "A", exp.group(1).strip() if exp else ""
+Правильный ответ: A
+Объяснение: краткое объяснение
+
+НИЧЕГО ЛИШНЕГО НЕ ПИШИ.
+НЕ ПИШИ приветствия.
+НЕ ПИШИ на английском.
+"""
 # ===== START =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
