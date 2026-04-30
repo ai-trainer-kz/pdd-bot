@@ -100,31 +100,15 @@ def answer_kb():
 
 # ===== GPT =====
 async def ask_gpt(uid):
-    prompt = """
-Ты экзаменатор ПДД Казахстан.
-
-Сгенерируй 1 НОВЫЙ вопрос.
-
-Ответ строго в формате:
-
-Вопрос:
-...
-
-A) ...
-B) ...
-C) ...
-D) ...
-
-Правильный ответ: A
-Объяснение: кратко
-"""
+    prompt = """..."""
 
     loop = asyncio.get_event_loop()
+
     r = await loop.run_in_executor(
         None,
         lambda: client.chat.completions.create(
             model=MODEL,
-            messages=[{"role":"user","content":prompt}],
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.8
         )
     )
@@ -137,13 +121,7 @@ D) ...
     question_only = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
     question_only = re.sub(r"Объяснение.*", "", question_only, flags=re.S)
 
-    if last_questions.get(uid) == question_only:
-        return ask_gpt(uid)
-
-    last_questions[uid] = question_only
-
     return question_only, ans.group(1) if ans else "A", exp.group(1).strip() if exp else ""
-
 # ===== START =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
@@ -204,7 +182,7 @@ async def exam(message: types.Message):
     await asyncio.sleep(0.3)
     return await send_question(message, u)
 # ===== BUY =====
-@dp.message_handler(lambda m: "Купить" in m.text)
+@dp.message_handler(lambda m: m.text and "Купить" in m.text)
 async def buy(message: types.Message):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("7 дней — 5000₸")
@@ -219,12 +197,18 @@ async def buy(message: types.Message):
         reply_markup=kb
     )
 
+
 # ===== PLAN =====
-@dp.message_handler(lambda m: m.text in ["7 дней — 5000₸", "30 дней — 10000₸"])
+@dp.message_handler(lambda m: m.text and m.text.strip() in ["7 дней — 5000₸", "30 дней — 10000₸"])
 async def plan(message: types.Message):
+    ensure_user(message.from_user.id)
     u = users[str(message.from_user.id)]
 
-    u["plan"] = 7 if "7" in message.text else 30
+    if "7" in message.text:
+        u["plan"] = 7
+    else:
+        u["plan"] = 30
+
     save_users()
 
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -241,6 +225,50 @@ async def plan(message: types.Message):
         "1️⃣ Оплати\n2️⃣ Нажми «Я оплатил»",
         reply_markup=kb
     )
+
+
+# ===== PAYMENT =====
+@dp.message_handler(lambda m: m.text == "✅ Я оплатил")
+async def paid(message: types.Message):
+    ensure_user(message.from_user.id)
+    user = message.from_user
+    u = users[str(user.id)]
+
+    if not u.get("plan"):
+        await message.answer("❗ Сначала выбери тариф")
+        return
+
+    u["status"] = "pending"
+    save_users()
+
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
+        InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
+    )
+    kb.add(
+        InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}")
+    )
+
+    try:
+        now = datetime.now()
+
+        await bot.send_message(
+            ADMIN_ID,
+            f"📅 {now.strftime('%d.%m.%Y')}\n"
+            f"⏰ {now.strftime('%H:%M')}\n\n"
+            f"💰 ОПЛАТА\n\n"
+            f"👤 @{user.username if user.username else 'нет'}\n"
+            f"🆔 ID: {user.id}\n"
+            f"📦 Тариф: {u.get('plan')} дней",
+            reply_markup=kb
+        )
+
+        await message.answer("✅ Отправлено админу на проверку")
+
+    except Exception as e:
+        print("ERROR ADMIN:", e)
+        await message.answer("❌ Ошибка отправки админу")
 
 # ===== PAYMENT =====
 @dp.message_handler(lambda m: m.text == "✅ Я оплатил")
@@ -343,7 +371,7 @@ async def send_question(message, u):
         u["used_free"] += 1
 
     text, ans, exp = await ask_gpt(message.from_user.id)
-
+    
     u["correct_answer"] = ans
     u["explanation"] = exp
     u["waiting_answer"] = True
