@@ -285,7 +285,7 @@ async def give_7(callback: types.CallbackQuery):
     u = users.get(user_id, {})
     u["status"] = "active"
     u["plan"] = 7
-    u["expire"] = (datetime.now() + timedelta(days=7)).isoformat()
+    u["premium_until"]  = (datetime.now() + timedelta(days=7)).isoformat()
 
     users[user_id] = u
     save_users()
@@ -300,7 +300,7 @@ async def give_30(callback: types.CallbackQuery):
     u = users.get(user_id, {})
     u["status"] = "active"
     u["plan"] = 30
-    u["expire"] = (datetime.now() + timedelta(days=30)).isoformat()
+    u["premium_until"] = (datetime.now() + timedelta(days=30)).isoformat()
 
     users[user_id] = u
     save_users()
