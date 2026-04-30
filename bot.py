@@ -179,7 +179,7 @@ async def answer(message: types.Message):
         await message.answer(f"❌ Неверно\nОтвет: {correct}")
 
     if u["mode"] == "exam":
-    u["exam_index"] += 1
+        u["exam_index"] += 1
 
     if u["exam_index"] >= len(u["exam_questions"]):
         percent = int(u["exam_correct"] / len(u["exam_questions"]) * 100)
