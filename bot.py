@@ -412,9 +412,9 @@ async def send_question(message, u):
     text, ans, exp = await ask_gpt(message.from_user.id)
 
     if "Ошибка генерации" in text:
-    await message.answer(text)
-    return
-    
+        await message.answer(text)
+        return
+        
     u["correct_answer"] = ans
     u["explanation"] = exp
     u["waiting_answer"] = True
