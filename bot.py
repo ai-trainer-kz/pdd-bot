@@ -101,18 +101,16 @@ def answer_kb():
 # ===== GPT =====
 async def ask_gpt(uid):
     prompt = """
-Ты помощник для подготовки к экзамену ПДД Казахстан.
+Ты генератор тестов ПДД Казахстана.
 
-Сгенерируй 1 новый вопрос.
-
-Правила:
+СТРОГИЕ ПРАВИЛА:
 - Только русский язык
+- Никакого английского
 - Без приветствий
-- 4 варианта (A B C D)
-- 1 правильный ответ
-- Короткое объяснение
+- Всегда 4 варианта: A B C D
+- Правильный ответ ТОЛЬКО ОДНА БУКВА
 
-Формат:
+Формат строго:
 
 Вопрос:
 ...
@@ -125,7 +123,6 @@ D) ...
 Правильный ответ: A
 Объяснение: ...
 """
-
     loop = asyncio.get_event_loop()
 
     for _ in range(3):  # пробуем до 3 раз
@@ -151,16 +148,16 @@ D) ...
         ):
             continue
 
-        ans = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
-        exp = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
+        ans_match = re.search(r"Правильный ответ[:\s]*([ABCD])", text)
 
-        question_only = re.sub(r"Правильный ответ.*", "", text, flags=re.S)
-        question_only = re.sub(r"Объяснение.*", "", question_only, flags=re.S)
-
-        return question_only, ans.group(1), exp.group(1).strip()
-
-    # если 3 раза не получилось — fallback
-    return "Ошибка генерации вопроса. Попробуй ещё раз.", "A", ""
+        if not ans_match:
+            continue
+        
+        ans = ans_match.group(1)
+        
+        exp_match = re.search(r"Объяснение[:\s]*(.*)", text, re.S)
+        exp = exp_match.group(1).strip() if exp_match else ""
+    
 # ===== START =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
@@ -309,47 +306,6 @@ async def paid(message: types.Message):
         print("ERROR ADMIN:", e)
         await message.answer("❌ Ошибка отправки админу")
 
-# ===== PAYMENT =====
-@dp.message_handler(lambda m: m.text == "✅ Я оплатил")
-async def paid(message: types.Message):
-    user = message.from_user
-    u = users.get(str(user.id), {})
-    
-    u["status"] = "pending"
-    users[str(user.id)] = u
-    save_users()
-
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
-        InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
-    )
-    kb.add(
-        InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}")
-    )
-
-    try:
-        now = datetime.now()
-
-        await bot.send_message(
-            ADMIN_ID,
-            f"📅 {now.strftime('%d.%m.%Y')}\n"
-            f"⏰ {now.strftime('%H:%M')}\n\n"
-            f"💰 ОПЛАТА\n\n"
-            f"👤 @{user.username if user.username else 'нет'}\n"
-            f"🆔 ID: {user.id}\n"
-            f"🌍 Язык: {user.language_code or 'неизвестно'}\n"
-            f"🏙 Город: не определён\n"
-            f"📦 Тариф: {u.get('plan', 'не выбран')} дней",
-            reply_markup=kb
-        )
-
-        await message.answer("✅ Отправлено админу на проверку")
-
-    except Exception as e:
-        print("ERROR ADMIN:", e)
-        await message.answer("❌ Ошибка отправки админу")
-
 # ===== CALLBACK =====
 @dp.callback_query_handler(lambda c: c.data.startswith("give_7_"))
 async def give_7(callback: types.CallbackQuery):
@@ -397,52 +353,55 @@ async def send_question(message, u):
     if u.get("waiting_answer"):
         return
 
-    msg = await message.answer("⏳ Загружаю вопрос...")  
+    u["waiting_answer"] = False
+
+    msg = await message.answer("⏳ Загружаю вопрос...")
 
     text, ans, exp = await ask_gpt(message.from_user.id)
 
-    await msg.delete()  
+    await msg.delete()
 
-    u["correct_answer"] = ans
+    u["correct_answer"] = str(ans).strip().upper()
     u["explanation"] = exp
     u["waiting_answer"] = True
 
-    await message.answer(text, reply_markup=answer_kb())
     save_users()
+
+    await message.answer(text, reply_markup=answer_kb())
 # ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A","B","C","D"])
 async def answer(message: types.Message):
-    u = users[str(message.from_user.id)]
+    u = users.get(str(message.from_user.id))
+
+    if not u:
+        return
 
     if u.get("processing"):
         return
 
-    u["processing"] = True
-
     if not u.get("waiting_answer"):
-        await message.answer("⏳ Подожди вопрос...")
-        u["processing"] = False
         return
 
+    u["processing"] = True
     u["waiting_answer"] = False
 
-    if message.text == u["correct_answer"]:
+    user_answer = message.text.strip().upper()
+    correct = str(u.get("correct_answer", "")).strip().upper()
+
+    if user_answer == correct:
         u["correct"] += 1
         if u["mode"] == "exam":
             u["exam_correct"] += 1
         await message.answer("✅ Верно")
     else:
         u["wrong"] += 1
-        await message.answer(f"❌ Неверно\nОтвет: {u['correct_answer']}")
+        await message.answer(f"❌ Неверно\nОтвет: {correct}")
 
-    if u["explanation"]:
+    if u.get("explanation"):
         await message.answer(f"📘 {u['explanation'][:200]}")
 
-    await asyncio.sleep(0.3)
-    await send_question(message, u)
+    save_users()
 
-    u["processing"] = False
-    
     # ===== ЭКЗАМЕН =====
     if u["mode"] == "exam":
         u["exam_count"] += 1
@@ -463,8 +422,13 @@ async def answer(message: types.Message):
 
             await message.answer(msg, reply_markup=main_kb())
             save_users()
+            u["processing"] = False
             return
 
+    await asyncio.sleep(0.3)
+    await send_question(message, u)
+
+    u["processing"] = False
     save_users()
 
     if u["mode"] in ["train", "exam"]:
