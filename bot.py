@@ -5,12 +5,6 @@ from datetime import datetime, timedelta
 import re
 import asyncio
 
-try:
-    text = await asyncio.wait_for(ask_gpt(), timeout=15)
-except asyncio.TimeoutError:
-    await message.answer("❌ GPT долго отвечает")
-    return
-
 USERS_FILE = "users.json"
 
 def load_users():
@@ -344,19 +338,34 @@ async def send_question(message, u):
 
     msg = await message.answer("⏳ Загружаю вопрос...")
 
-    text, correct, exp = await ask_gpt(message.from_user.id)
-    
+    try:
+        text, correct, exp = await asyncio.wait_for(
+            ask_gpt(message.from_user.id),
+            timeout=15
+        )
+    except asyncio.TimeoutError:
+        await message.answer("❌ GPT долго отвечает")
+        u["processing"] = False
+        return
+    except Exception as e:
+        print("ERROR:", e)
+        await message.answer("❌ Ошибка GPT")
+        u["processing"] = False
+        return
+
     print("GPT RAW:", text)
 
     if not text or "Вопрос:" not in text:
         text = """Вопрос: Какой сигнал разрешает движение?
-    A) Красный
-    B) Желтый
-    C) Зеленый
-    D) Мигающий
+A) Красный
+B) Желтый
+C) Зеленый
+D) Мигающий
 
 Правильный ответ: C
 Объяснение: Зеленый разрешает движение."""
+        correct = "C"
+        exp = "Зеленый разрешает движение"
 
     u["correct_answer"] = correct
     u["explanation"] = exp
