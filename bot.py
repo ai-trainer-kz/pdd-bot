@@ -5,6 +5,7 @@ import asyncio
 from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types
+from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.types import ReplyKeyboardMarkup
 from aiogram.utils import executor
 from openai import OpenAI
@@ -208,16 +209,18 @@ async def back(message: types.Message):
     )
 
 # ===== BUY =====   
-@dp.message_handler(lambda m: m.text == "💰 Купить доступ")
-async def buy(message: types.Message):
-    await message.answer(
-        "💳 Оплата Kaspi:\n4400430352720152\n\nПосле оплаты нажми:",
-        reply_markup=buy_kb()
-    )
-
 @dp.message_handler(lambda m: m.text == "✅ Я оплатил")
 async def paid(message: types.Message):
     user = message.from_user
+    u = users[str(user.id)]
+
+    # защита от спама
+    if u.get("waiting_payment"):
+        await message.answer("⏳ Ты уже отправил заявку, жди ответа")
+        return
+
+    u["waiting_payment"] = True
+    save_json(USERS_FILE, users)
 
     username = f"@{user.username}" if user.username else "нет"
 
@@ -239,11 +242,9 @@ async def paid(message: types.Message):
     kb.add(
         InlineKeyboardButton("❌ Отказ", callback_data=f"deny_{user.id}")
     )
-    u["waiting_payment"] = False
 
     await bot.send_message(ADMIN_ID, text, reply_markup=kb)
     await message.answer("⏳ Проверяем оплату... Ожидай подтверждения")
-    await bot.send_message(user_id, "✅ Оплата подтверждена! Доступ открыт 🚀")
     
 @dp.callback_query_handler(lambda c: True)
 async def admin_actions(callback: types.CallbackQuery):
@@ -267,8 +268,10 @@ async def admin_actions(callback: types.CallbackQuery):
     # выдать доступ
     u = users[str(user_id)]
     u["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
+    u["waiting_payment"] = False
+    
     save_json(USERS_FILE, users)
-
+    
     await bot.send_message(user_id, f"✅ Доступ выдан на {days} дней")
     await callback.answer("Готово")
 
