@@ -170,6 +170,7 @@ async def train(message: types.Message):
 
     return await send_question(message, u)
 
+
 @dp.message_handler(lambda m: m.text == "🧠 Экзамен")
 async def exam(message: types.Message):
     ensure_user(message.from_user.id)
@@ -186,131 +187,13 @@ async def exam(message: types.Message):
 
     await message.answer("🧠 Экзамен: 20 вопросов")
     return await send_question(message, u)
-# ===== BUY =====
-@dp.message_handler(lambda m: "Купить" in m.text)
-async def buy(message: types.Message):
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("7 дней — 5000₸")
-    kb.add("30 дней — 10000₸")
-    kb.add("⬅️ Назад")
 
-    await message.answer(
-        "💰 Выбери тариф:\n\n"
-        "🔥 Безлимитные вопросы\n"
-        "🧠 Умные объяснения\n"
-        "📈 Быстрый рост результата",
-        reply_markup=kb
-    )
-
-# ===== PLAN =====
-@dp.message_handler(lambda m: m.text in ["7 дней — 5000₸", "30 дней — 10000₸"])
-async def plan(message: types.Message):
-    u = users[str(message.from_user.id)]
-
-    u["plan"] = 7 if "7" in message.text else 30
-    save_users()
-
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("✅ Я оплатил")
-    kb.add("⬅️ Назад")
-
-    await message.answer(
-        f"💳 Kaspi: {KASPI}\n\n"
-        f"📦 Тариф: {u['plan']} дней\n\n"
-        "🔥 Полный доступ:\n"
-        "• Безлимитные вопросы\n"
-        "• Экзамен без ограничений\n"
-        "• Объяснения от AI\n\n"
-        "1️⃣ Оплати\n2️⃣ Нажми «Я оплатил»",
-        reply_markup=kb
-    )
-
-# ===== PAYMENT =====
-@dp.message_handler(lambda m: m.text == "✅ Я оплатил")
-async def paid(message: types.Message):
-    user = message.from_user
-    u = users.get(str(user.id), {})
-    
-    u["status"] = "pending"
-    users[str(user.id)] = u
-    save_users()
-
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
-        InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
-    )
-    kb.add(
-        InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{user.id}")
-    )
-
-    try:
-        now = datetime.now()
-
-        await bot.send_message(
-            ADMIN_ID,
-            f"📅 {now.strftime('%d.%m.%Y')}\n"
-            f"⏰ {now.strftime('%H:%M')}\n\n"
-            f"💰 ОПЛАТА\n\n"
-            f"👤 @{user.username if user.username else 'нет'}\n"
-            f"🆔 ID: {user.id}\n"
-            f"🌍 Язык: {user.language_code or 'неизвестно'}\n"
-            f"🏙 Город: не определён\n"
-            f"📦 Тариф: {u.get('plan', 'не выбран')} дней",
-            reply_markup=kb
-        )
-
-        await message.answer("✅ Отправлено админу на проверку")
-
-    except Exception as e:
-        print("ERROR ADMIN:", e)
-        await message.answer("❌ Ошибка отправки админу")
-
-# ===== CALLBACK =====
-@dp.callback_query_handler(lambda c: c.data.startswith("give_7_"))
-async def give_7(callback: types.CallbackQuery):
-    user_id = callback.data.split("_")[2]
-
-    u = users.get(user_id, {})
-    u["status"] = "active"
-    u["plan"] = 7
-    u["expire"] = (datetime.now() + timedelta(days=7)).isoformat()
-
-    users[user_id] = u
-    save_users()
-
-    await bot.send_message(user_id, "🔥 Доступ открыт на 7 дней")
-    await callback.answer("Выдано 7 дней")
-
-
-@dp.callback_query_handler(lambda c: c.data.startswith("give_30_"))
-async def give_30(callback: types.CallbackQuery):
-    user_id = callback.data.split("_")[2]
-    u = users.get(user_id, {})
-    u["status"] = "active"
-    u["plan"] = 30
-    u["expire"] = (datetime.now() + timedelta(days=30)).isoformat()
-
-    users[user_id] = u
-    save_users()
-
-    await bot.send_message(user_id, "🔥 Доступ открыт на 30 дней")
-    await callback.answer("Выдано 30 дней")
-
-@dp.callback_query_handler(lambda c: c.data.startswith("deny_"))
-async def deny(callback: types.CallbackQuery):
-    user_id = callback.data.split("_")[1]
-
-    await bot.send_message(user_id, "❌ Оплата отклонена")
-    await callback.answer("Отклонено")
-    
 # ===== QUESTION =====
 async def send_question(message, u):
     if not has_access(u):
         await message.answer(
             "🔒 Бесплатные вопросы закончились\n\n"
-            "🔥 Открой полный доступ и готовься без ограничений\n"
-            "💯 Сдашь с первого раза",
+            "🔥 Открой полный доступ и готовься без ограничений",
             reply_markup=main_kb()
         )
         return
@@ -333,6 +216,7 @@ async def send_question(message, u):
 
     await message.answer(text + progress, reply_markup=answer_kb())
     save_users()
+
 # ===== ANSWER =====
 @dp.message_handler(lambda m: m.text in ["A","B","C","D"])
 async def answer(message: types.Message):
@@ -355,7 +239,6 @@ async def answer(message: types.Message):
     if u["explanation"]:
         await message.answer(f"📘 {u['explanation'][:200]}")
 
-    # ===== ЭКЗАМЕН =====
     if u["mode"] == "exam":
         u["exam_count"] += 1
 
@@ -369,18 +252,17 @@ async def answer(message: types.Message):
             )
 
             if percent < 80:
-                msg += "❌ Не сдал\n\n🔥 Пройди тренировку и попробуй снова"
+                msg += "❌ Не сдал\n\n🔥 Пройди тренировку"
             else:
-                msg += "🔥 Отлично! Ты готов к экзамену"
+                msg += "🔥 Отлично! Ты готов"
 
             await message.answer(msg, reply_markup=main_kb())
             save_users()
             return
 
     save_users()
+    await send_question(message, u)
 
-    if u["mode"] in ["train", "exam"]:
-        await send_question(message, u)
 # ===== BACK =====
 @dp.message_handler(lambda m: m.text == "⬅️ Назад")
 async def back(message: types.Message):
@@ -391,8 +273,8 @@ async def back(message: types.Message):
     u["waiting_answer"] = False
 
     save_users()
-
     await message.answer("🏠 Главное меню", reply_markup=main_kb())
+
 # ===== STATS =====
 @dp.message_handler(lambda m: m.text == "📊 Статистика")
 async def stats(message: types.Message):
