@@ -233,9 +233,8 @@ kb.add(
     InlineKeyboardButton("❌ Отказ", callback_data=f"deny_{user.id}")
 )
 
-    await bot.send_message(ADMIN_ID, text, reply_markup=kb)
-
-    await message.answer("⏳ Заявка отправлена администратору")
+await bot.send_message(ADMIN_ID, text, reply_markup=kb)
+await message.answer("⏳ Заявка отправлена администратору")
 
 @dp.callback_query_handler(lambda c: True)
 async def admin_actions(callback: types.CallbackQuery):
