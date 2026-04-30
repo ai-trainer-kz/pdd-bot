@@ -125,8 +125,12 @@ async def send_question(message, u):
 
     u["question_id"] = q["id"]
     u["correct_answer"] = q["correct"]
-    u["waiting_answer"] = True
+    
+    if not has_access(u):
+        await message.answer("🔒 Купи доступ")
+        return
 
+    u["waiting_answer"] = True
     # ===== ДОСТУП =====
     if not has_access(u):
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -296,29 +300,28 @@ async def answer(message: types.Message):
     if not u.get("waiting_answer"):
         return
 
+    # сразу сбрасываем состояние
     u["waiting_answer"] = False
-    
+
     user_answer = message.text
     correct = u["correct_answer"]
-    
+
     # проверка
     if user_answer == correct:
         u["correct"] += 1
-    
+
         if u["mode"] == "exam":
             u["exam_correct"] += 1
-    
+
         await message.answer("✅ Верно")
     else:
         u["wrong"] += 1
         await message.answer(f"❌ Неверно\nОтвет: {correct}")
-    
+
     # следующий вопрос
-    u["waiting_answer"] = False
-    
     if u["mode"] == "exam":
         u["exam_index"] += 1
-    
+
     await send_question(message, u)
     
     
