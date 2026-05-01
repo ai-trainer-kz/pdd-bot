@@ -79,14 +79,15 @@ def buy_kb():
 async def send_question(message, u):
 
     if not has_access(u):
-        u["waiting_answer"] = False(
+        u["waiting_answer"] = False
+        await message.answer(
             f"🔒 Доступ ограничен\n\nОплата Kaspi:\n{KASPI}",
             reply_markup=buy_kb()
         )
         return
 
     if not questions:
-        await message.answer("Нет вопросов")
+        await message.answer
         return
 
     if u["mode"] == "exam":
@@ -121,15 +122,16 @@ D) {q['D']}
     await message.answer(text, reply_markup=answer_kb())
 
 # ===== START =====
+async def show_menu(message):
+    await message.answer(
+        "🚗 Подготовка к ПДД\n\nВыбери режим:",
+        reply_markup=main_kb()
+    )
+
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
     ensure_user(message.from_user.id)
-
-    async def show_menu(message):
-        await message.answer(
-            "🚗 Подготовка к ПДД\n\nВыбери режим:",
-            reply_markup=main_kb()
-        )
+    await show_menu(message)
 
 # ===== МЕНЮ =====
 @dp.message_handler(lambda m: m.text in ["🧠 Экзамен", "🎯 Тренировка", "📊 Статистика", "⬅️ Назад"])
@@ -263,21 +265,12 @@ async def handler(message: types.Message):
 
         await show_menu(message)
         return
-
-        await show_menu(message)
-        return
         
     if message.text in ["A", "B", "C", "D"]:
         if not u.get("waiting_answer"):
             return
 
-        # твоя логика ответа
-        ...
-
-    u["waiting_answer"] = False
-    u["mode"] = None
-
-    if message.text == u["correct_answer"]:
+     if message.text == u["correct_answer"]:
         u["correct"] += 1
         if u["mode"] == "exam":
             u["exam_correct"] += 1
@@ -285,6 +278,9 @@ async def handler(message: types.Message):
     else:
         u["wrong"] += 1
         await message.answer(f"❌ Неверно\nОтвет: {u['correct_answer']}")
+
+    u["waiting_answer"] = False
+    u["mode"] = None
 
     if u["mode"] == "exam":
         u["exam_index"] += 1
