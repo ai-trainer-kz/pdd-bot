@@ -270,7 +270,7 @@ async def handler(message: types.Message):
         if not u.get("waiting_answer"):
             return
 
-     if message.text == u["correct_answer"]:
+    if message.text == u["correct_answer"]:
         u["correct"] += 1
         if u["mode"] == "exam":
             u["exam_correct"] += 1
