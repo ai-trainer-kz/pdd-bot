@@ -1,10 +1,11 @@
 import os
 import json
 import random
+import asyncio
 from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import ReplyKeyboardMarkup
 from aiogram.utils import executor
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -18,6 +19,7 @@ dp = Dispatcher(bot)
 USERS_FILE = "users.json"
 QUESTIONS_FILE = "questions.json"
 
+
 # ===== LOAD =====
 def load_json(file, default):
     if os.path.exists(file):
@@ -25,12 +27,15 @@ def load_json(file, default):
             return json.load(f)
     return default
 
+
 def save_json(file, data):
     with open(file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+
 users = load_json(USERS_FILE, {})
 questions = load_json(QUESTIONS_FILE, [])
+
 
 # ===== USER =====
 def ensure_user(uid):
@@ -53,11 +58,13 @@ def ensure_user(uid):
         }
         save_json(USERS_FILE, users)
 
+
 def has_access(u):
     if u.get("premium_until"):
         if datetime.now() < datetime.fromisoformat(u["premium_until"]):
             return True
     return u["used_free"] < u["free_limit"]
+
 
 # ===== UI =====
 def main_kb():
@@ -66,31 +73,20 @@ def main_kb():
     kb.add("📊 Статистика")
     return kb
 
+
 def answer_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("A","B","C","D")
+    kb.add("A", "B", "C", "D")
     kb.add("⬅️ Назад")
     return kb
 
-def next_kb():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("➡️ Далее")
-    kb.add("⬅️ Назад")
-    return kb
-
-def buy_kb():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("💰 Купить доступ")
-    kb.add("⬅️ Назад")
-    return kb
 
 # ===== QUESTION =====
 async def send_question(message, u):
-
     if not has_access(u):
         await message.answer(
             f"🔒 Доступ ограничен\n\nKaspi:\n{KASPI}",
-            reply_markup=buy_kb()
+            reply_markup=main_kb()
         )
         return
 
@@ -120,22 +116,17 @@ async def send_question(message, u):
 
     save_json(USERS_FILE, users)
 
-    text = f"""
-{q['question']}
-
-A) {q['A']}
-B) {q['B']}
-C) {q['C']}
-D) {q['D']}
-"""
+    text = f"{q['question']}\n\nA) {q['A']}\nB) {q['B']}\nC) {q['C']}\nD) {q['D']}"
 
     await message.answer(text, reply_markup=answer_kb())
+
 
 # ===== START =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
     ensure_user(message.from_user.id)
     await message.answer("🚗 Подготовка к ПДД\n\nВыбери режим:", reply_markup=main_kb())
+
 
 # ===== MENU =====
 @dp.message_handler(lambda m: m.text in ["🧠 Экзамен", "🎯 Тренировка", "📊 Статистика", "⬅️ Назад"])
@@ -166,8 +157,9 @@ async def menu(message: types.Message):
         await message.answer("🧠 Экзамен начался (20 вопросов)")
         await send_question(message, u)
 
+
 # ===== ANSWER =====
-@dp.message_handler(lambda m: m.text in ["A","B","C","D"])
+@dp.message_handler(lambda m: m.text in ["A", "B", "C", "D"])
 async def answer(message: types.Message):
     u = users[str(message.from_user.id)]
 
@@ -179,6 +171,11 @@ async def answer(message: types.Message):
     correct = u["correct_answer"]
     q = u["question"]
 
+    # мгновенный отклик (анти-лаг)
+    await message.answer("⏳ Проверяю...")
+
+    await asyncio.sleep(0.3)  # микро-пауза для UX
+
     if message.text == correct:
         u["correct"] += 1
         if u["mode"] == "exam":
@@ -188,55 +185,44 @@ async def answer(message: types.Message):
         u["wrong"] += 1
         text = f"❌ Неверно\nПравильный ответ: {correct}"
 
-    await message.answer(text)
-
-    # объяснение из JSON (мгновенно, без лагов)
     explanation = q.get("explanation", "Нет объяснения")
-    await message.answer(f"📘 {explanation}")
+
+    await message.answer(f"{text}\n\n📘 {explanation}")
 
     if u["mode"] == "exam":
         u["exam_index"] += 1
 
     save_json(USERS_FILE, users)
 
-    await message.answer("Продолжить?", reply_markup=next_kb())
-
-# ===== NEXT =====
-@dp.message_handler(lambda m: m.text == "➡️ Далее")
-async def next_q(message: types.Message):
-    u = users[str(message.from_user.id)]
+    # АВТО следующий вопрос (без кнопок!)
+    await asyncio.sleep(0.7)
     await send_question(message, u)
+
 
 # ===== BUY =====
 @dp.message_handler(lambda m: m.text == "💰 Купить доступ")
 async def buy(message: types.Message):
     await message.answer(
-        f"Kaspi: {KASPI}\n\nПосле оплаты нажми:",
-        reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Я оплатил", "⬅️ Назад")
+        f"Kaspi: {KASPI}\n\nПосле оплаты напиши: Я оплатил",
+        reply_markup=main_kb()
     )
+
 
 # ===== PAID =====
-@dp.message_handler(lambda m: m.text == "✅ Я оплатил")
+@dp.message_handler(lambda m: m.text.lower() == "я оплатил")
 async def paid(message: types.Message):
     user = message.from_user
-    u = users[str(user.id)]
 
-    if u["waiting_payment"]:
-        await message.answer("⏳ Уже отправлено")
-        return
-
-    u["waiting_payment"] = True
-    save_json(USERS_FILE, users)
-
-    kb = InlineKeyboardMarkup()
+    kb = types.InlineKeyboardMarkup()
     kb.add(
-        InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
-        InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
+        types.InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
+        types.InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
     )
-    kb.add(InlineKeyboardButton("❌ Отказ", callback_data=f"deny_{user.id}"))
+    kb.add(types.InlineKeyboardButton("❌ Отказ", callback_data=f"deny_{user.id}"))
 
     await bot.send_message(ADMIN_ID, f"💰 {user.full_name} @{user.username} {user.id}", reply_markup=kb)
     await message.answer("⏳ Ожидай подтверждения", reply_markup=main_kb())
+
 
 # ===== ADMIN =====
 @dp.callback_query_handler(lambda c: True)
@@ -261,6 +247,7 @@ async def admin(callback: types.CallbackQuery):
     save_json(USERS_FILE, users)
 
     await bot.send_message(uid, f"✅ Доступ на {days} дней", reply_markup=main_kb())
+
 
 # ===== RUN =====
 if __name__ == "__main__":
