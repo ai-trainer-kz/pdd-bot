@@ -1,7 +1,6 @@
 import os
 import json
 import random
-import asyncio
 from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types
@@ -39,18 +38,18 @@ def ensure_user(uid):
     if uid not in users:
         users[uid] = {
             "mode": None,
-            "correct_answer": None,
             "question": None,
+            "correct_answer": None,
+            "waiting_answer": False,
             "free_limit": 5,
             "used_free": 0,
             "premium_until": None,
             "correct": 0,
             "wrong": 0,
-            "waiting_answer": False,
-            "waiting_payment": False,
             "exam_questions": [],
             "exam_index": 0,
-            "exam_correct": 0
+            "exam_correct": 0,
+            "waiting_payment": False
         }
         save_json(USERS_FILE, users)
 
@@ -73,29 +72,22 @@ def answer_kb():
     kb.add("⬅️ Назад")
     return kb
 
+def next_kb():
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("➡️ Далее")
+    kb.add("⬅️ Назад")
+    return kb
+
 def buy_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("💰 Купить доступ")
     kb.add("⬅️ Назад")
     return kb
 
-def after_pay_kb():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🧠 Экзамен", "🎯 Тренировка")
-    kb.add("⬅️ Назад")
-    return kb
-
-# ===== GPT (гибрид) =====
-async def explain_answer(q, correct):
-    # тут потом подключишь OpenAI
-    await asyncio.sleep(0.5)
-    return f"📘 Объяснение:\nПравильный ответ: {correct}"
-
 # ===== QUESTION =====
 async def send_question(message, u):
 
     if not has_access(u):
-        u["waiting_answer"] = False
         await message.answer(
             f"🔒 Доступ ограничен\n\nKaspi:\n{KASPI}",
             reply_markup=buy_kb()
@@ -114,11 +106,13 @@ async def send_question(message, u):
                 reply_markup=main_kb()
             )
             u["mode"] = None
+            save_json(USERS_FILE, users)
             return
 
         q = u["exam_questions"][u["exam_index"]]
     else:
         q = random.choice(questions)
+        u["used_free"] += 1
 
     u["question"] = q
     u["correct_answer"] = q["correct"]
@@ -151,7 +145,6 @@ async def menu(message: types.Message):
     if message.text == "⬅️ Назад":
         u["mode"] = None
         u["waiting_answer"] = False
-        u["waiting_payment"] = False
         await message.answer("Главное меню", reply_markup=main_kb())
         return
 
@@ -172,6 +165,47 @@ async def menu(message: types.Message):
         u["exam_correct"] = 0
         await message.answer("🧠 Экзамен начался (20 вопросов)")
         await send_question(message, u)
+
+# ===== ANSWER =====
+@dp.message_handler(lambda m: m.text in ["A","B","C","D"])
+async def answer(message: types.Message):
+    u = users[str(message.from_user.id)]
+
+    if not u["waiting_answer"]:
+        return
+
+    u["waiting_answer"] = False
+
+    correct = u["correct_answer"]
+    q = u["question"]
+
+    if message.text == correct:
+        u["correct"] += 1
+        if u["mode"] == "exam":
+            u["exam_correct"] += 1
+        text = "✅ Верно"
+    else:
+        u["wrong"] += 1
+        text = f"❌ Неверно\nПравильный ответ: {correct}"
+
+    await message.answer(text)
+
+    # объяснение из JSON (мгновенно, без лагов)
+    explanation = q.get("explanation", "Нет объяснения")
+    await message.answer(f"📘 {explanation}")
+
+    if u["mode"] == "exam":
+        u["exam_index"] += 1
+
+    save_json(USERS_FILE, users)
+
+    await message.answer("Продолжить?", reply_markup=next_kb())
+
+# ===== NEXT =====
+@dp.message_handler(lambda m: m.text == "➡️ Далее")
+async def next_q(message: types.Message):
+    u = users[str(message.from_user.id)]
+    await send_question(message, u)
 
 # ===== BUY =====
 @dp.message_handler(lambda m: m.text == "💰 Купить доступ")
@@ -202,7 +236,7 @@ async def paid(message: types.Message):
     kb.add(InlineKeyboardButton("❌ Отказ", callback_data=f"deny_{user.id}"))
 
     await bot.send_message(ADMIN_ID, f"💰 {user.full_name} @{user.username} {user.id}", reply_markup=kb)
-    await message.answer("⏳ Ожидай", reply_markup=main_kb())
+    await message.answer("⏳ Ожидай подтверждения", reply_markup=main_kb())
 
 # ===== ADMIN =====
 @dp.callback_query_handler(lambda c: True)
@@ -211,10 +245,11 @@ async def admin(callback: types.CallbackQuery):
 
     data = callback.data
 
-    if "deny_" in data:
+    if data.startswith("deny_"):
         uid = data.split("_")[1]
         users[uid]["waiting_payment"] = False
         await bot.send_message(uid, "❌ Отказ")
+        save_json(USERS_FILE, users)
         return
 
     uid = data.split("_")[2]
@@ -225,46 +260,7 @@ async def admin(callback: types.CallbackQuery):
 
     save_json(USERS_FILE, users)
 
-    await bot.send_message(uid, f"✅ Доступ на {days} дней", reply_markup=after_pay_kb())
-
-# ===== ANSWER =====
-@dp.message_handler(lambda m: m.text in ["A","B","C","D"])
-async def answer(message: types.Message):
-    u = users[str(message.from_user.id)]
-
-    if not u["waiting_answer"]:
-        return
-
-    correct = u["correct_answer"]
-
-    if message.text == correct:
-        u["correct"] += 1
-        if u["mode"] == "exam":
-            u["exam_correct"] += 1
-        text = "✅ Верно"
-    else:
-        u["wrong"] += 1
-        text = f"❌ Неверно\nОтвет: {correct}"
-
-    await message.answer(text)
-
-    # GPT объяснение (не тормозит UI)
-    asyncio.create_task(send_explanation(message, u))
-
-    if u["mode"] == "exam":
-        u["exam_index"] += 1
-
-    u["waiting_answer"] = False
-    save_json(USERS_FILE, users)
-
-    await asyncio.sleep(0.3)
-    await send_question(message, u)
-
-# ===== EXPLAIN =====
-async def send_explanation(message, u):
-    q = u["question"]
-    text = await explain_answer(q["question"], q["correct"])
-    await message.answer(text)
+    await bot.send_message(uid, f"✅ Доступ на {days} дней", reply_markup=main_kb())
 
 # ===== RUN =====
 if __name__ == "__main__":
