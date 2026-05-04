@@ -169,11 +169,11 @@ async def answer(callback: CallbackQuery, state: FSMContext):
             await callback.message.answer("❌ Экзамен провален")
             await state.clear()
             return
-         await state.update_data(
-            index=data["index"] + 1,
-            score=data["score"],
-            mistakes=data["mistakes"],
-            free_count=data["free_count"] + 1
+     await state.update_data(
+        index=data["index"] + 1,
+        score=data["score"],
+        mistakes=data["mistakes"],
+        free_count=data["free_count"] + 1
     )
     
     await send_question(callback.message, state)
