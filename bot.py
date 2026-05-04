@@ -1,254 +1,180 @@
-import os
-import json
-import random
 import asyncio
-from datetime import datetime, timedelta
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup
-from aiogram.utils import executor
+TOKEN = "ТВОЙ_ТОКЕН_СЮДА"
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
-ADMIN_ID = 503301815
-KASPI = "4400430352720152"
+# -------------------- СОСТОЯНИЯ --------------------
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+class QuizState(StatesGroup):
+    mode = State()
+    question_index = State()
+    score = State()
+    paid = State()
 
-USERS_FILE = "users.json"
-QUESTIONS_FILE = "questions.json"
+# -------------------- ВОПРОСЫ --------------------
 
+questions = [
+    {
+        "q": "Какой сигнал светофора разрешает движение?",
+        "options": ["Красный", "Желтый", "Зеленый", "Мигающий красный"],
+        "correct": 2,
+        "explanation": "Зеленый сигнал разрешает движение."
+    },
+    {
+        "q": "Когда включается ближний свет?",
+        "options": ["Только ночью", "Всегда при движении", "Только в городе", "По желанию"],
+        "correct": 1,
+        "explanation": "По ПДД ближний свет должен быть включен всегда."
+    },
+    {
+        "q": "Максимальная скорость в городе?",
+        "options": ["40", "60", "80", "100"],
+        "correct": 1,
+        "explanation": "В большинстве случаев — 60 км/ч."
+    }
+]
 
-# ===== LOAD =====
-def load_json(file, default):
-    if os.path.exists(file):
-        with open(file, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return default
+# -------------------- КНОПКИ --------------------
 
+def menu_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📘 Тренировка", callback_data="training")],
+        [InlineKeyboardButton(text="📝 Экзамен", callback_data="exam")]
+    ])
 
-def save_json(file, data):
-    with open(file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def answers_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="A", callback_data="ans_0"),
+         InlineKeyboardButton(text="B", callback_data="ans_1")],
+        [InlineKeyboardButton(text="C", callback_data="ans_2"),
+         InlineKeyboardButton(text="D", callback_data="ans_3")],
+        [InlineKeyboardButton(text="📖 Объяснение", callback_data="explain")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")]
+    ])
 
+def pay_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Купить доступ", callback_data="buy")],
+        [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")]
+    ])
 
-users = load_json(USERS_FILE, {})
-questions = load_json(QUESTIONS_FILE, [])
+# -------------------- СТАРТ --------------------
 
+@dp.message(Command("start"))
+async def start(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Выбери режим:", reply_markup=menu_kb())
 
-# ===== USER =====
-def ensure_user(uid):
-    uid = str(uid)
-    if uid not in users:
-        users[uid] = {
-            "mode": None,
-            "question": None,
-            "correct_answer": None,
-            "waiting_answer": False,
-            "free_limit": 5,
-            "used_free": 0,
-            "premium_until": None,
-            "correct": 0,
-            "wrong": 0,
-            "exam_questions": [],
-            "exam_index": 0,
-            "exam_correct": 0,
-            "waiting_payment": False
-        }
-        save_json(USERS_FILE, users)
+# -------------------- ВЫБОР РЕЖИМА --------------------
 
+@dp.callback_query(F.data == "training")
+async def training(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(QuizState.question_index)
+    await state.update_data(question_index=0, score=0, mode="training", paid=True)
+    await send_question(callback.message, state)
 
-def has_access(u):
-    if u.get("premium_until"):
-        if datetime.now() < datetime.fromisoformat(u["premium_until"]):
-            return True
-    return u["used_free"] < u["free_limit"]
+@dp.callback_query(F.data == "exam")
+async def exam(callback: CallbackQuery, state: FSMContext):
+    # ПРОВЕРКА ОПЛАТЫ (пока фейк)
+    paid = False
 
-
-# ===== UI =====
-def main_kb():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🧠 Экзамен", "🎯 Тренировка")
-    kb.add("📊 Статистика")
-    return kb
-
-
-def answer_kb():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("A", "B", "C", "D")
-    kb.add("⬅️ Назад")
-    return kb
-
-
-# ===== QUESTION =====
-async def send_question(message, u):
-    if not has_access(u):
-        await message.answer(
-            f"🔒 Доступ ограничен\n\nKaspi:\n{KASPI}",
-            reply_markup=main_kb()
+    if not paid:
+        await callback.message.answer(
+            "🔒 Доступ ограничен\n\nKaspi: 4400430352720152",
+            reply_markup=pay_kb()
         )
         return
 
-    if not questions:
-        await message.answer("Нет вопросов")
+    await state.set_state(QuizState.question_index)
+    await state.update_data(question_index=0, score=0, mode="exam", paid=True)
+    await send_question(callback.message, state)
+
+# -------------------- ОПЛАТА --------------------
+
+@dp.callback_query(F.data == "buy")
+async def buy(callback: CallbackQuery):
+    await callback.answer("Оплати по Kaspi выше 👆")
+
+@dp.callback_query(F.data == "paid")
+async def paid(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(paid=True)
+    await callback.message.answer("✅ Оплата принята (тест)")
+    await training(callback, state)
+
+# -------------------- ВОПРОС --------------------
+
+async def send_question(message: Message, state: FSMContext):
+    data = await state.get_data()
+    index = data["question_index"]
+
+    if index >= len(questions):
+        await message.answer(f"🎉 Конец! Баллы: {data['score']}")
+        await state.clear()
         return
 
-    if u["mode"] == "exam":
-        if u["exam_index"] >= len(u["exam_questions"]):
-            await message.answer(
-                f"🏁 Экзамен завершён\n\n"
-                f"✅ {u['exam_correct']} из {len(u['exam_questions'])}",
-                reply_markup=main_kb()
-            )
-            u["mode"] = None
-            save_json(USERS_FILE, users)
-            return
+    q = questions[index]
 
-        q = u["exam_questions"][u["exam_index"]]
+    text = f"{q['q']}\n\n"
+    for i, opt in enumerate(q["options"]):
+        text += f"{chr(65+i)}) {opt}\n"
+
+    await message.answer(text, reply_markup=answers_kb())
+
+# -------------------- ОТВЕТ --------------------
+
+@dp.callback_query(F.data.startswith("ans_"))
+async def answer(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    index = data["question_index"]
+    q = questions[index]
+
+    user_answer = int(callback.data.split("_")[1])
+
+    if user_answer == q["correct"]:
+        await callback.message.answer("✅ Верно")
+        data["score"] += 1
     else:
-        q = random.choice(questions)
-        u["used_free"] += 1
+        await callback.message.answer("❌ Неверно")
 
-    u["question"] = q
-    u["correct_answer"] = q["correct"]
-    u["waiting_answer"] = True
-
-    save_json(USERS_FILE, users)
-
-    text = f"{q['question']}\n\nA) {q['A']}\nB) {q['B']}\nC) {q['C']}\nD) {q['D']}"
-
-    await message.answer(text, reply_markup=answer_kb())
-
-
-# ===== START =====
-@dp.message_handler(commands=['start'])
-async def start(message: types.Message):
-    ensure_user(message.from_user.id)
-    await message.answer("🚗 Подготовка к ПДД\n\nВыбери режим:", reply_markup=main_kb())
-
-
-# ===== MENU =====
-@dp.message_handler(lambda m: m.text in ["🧠 Экзамен", "🎯 Тренировка", "📊 Статистика", "⬅️ Назад"])
-async def menu(message: types.Message):
-    u = users[str(message.from_user.id)]
-
-    if message.text == "⬅️ Назад":
-        u["mode"] = None
-        u["waiting_answer"] = False
-        await message.answer("Главное меню", reply_markup=main_kb())
-        return
-
-    if message.text == "📊 Статистика":
-        total = u["correct"] + u["wrong"]
-        percent = int(u["correct"] / total * 100) if total else 0
-        await message.answer(f"📊\n✅ {u['correct']}\n❌ {u['wrong']}\n📈 {percent}%")
-        return
-
-    if message.text == "🎯 Тренировка":
-        u["mode"] = "train"
-        await send_question(message, u)
-
-    if message.text == "🧠 Экзамен":
-        u["mode"] = "exam"
-        u["exam_questions"] = random.sample(questions, min(20, len(questions)))
-        u["exam_index"] = 0
-        u["exam_correct"] = 0
-        await message.answer("🧠 Экзамен начался (20 вопросов)")
-        await send_question(message, u)
-
-
-# ===== ANSWER =====
-@dp.message_handler(lambda m: m.text in ["A", "B", "C", "D"])
-async def answer(message: types.Message):
-    u = users[str(message.from_user.id)]
-
-    if not u["waiting_answer"]:
-        return
-
-    u["waiting_answer"] = False
-
-    correct = u["correct_answer"]
-    q = u["question"]
-
-    # мгновенный отклик (анти-лаг)
-    await message.answer("⏳ Проверяю...")
-
-    await asyncio.sleep(0.3)  # микро-пауза для UX
-
-    if message.text == correct:
-        u["correct"] += 1
-        if u["mode"] == "exam":
-            u["exam_correct"] += 1
-        text = "✅ Верно"
-    else:
-        u["wrong"] += 1
-        text = f"❌ Неверно\nПравильный ответ: {correct}"
-
-    explanation = q.get("explanation", "Нет объяснения")
-
-    await message.answer(f"{text}\n\n📘 {explanation}")
-
-    if u["mode"] == "exam":
-        u["exam_index"] += 1
-
-    save_json(USERS_FILE, users)
-
-    # АВТО следующий вопрос (без кнопок!)
-    await asyncio.sleep(0.7)
-    await send_question(message, u)
-
-
-# ===== BUY =====
-@dp.message_handler(lambda m: m.text == "💰 Купить доступ")
-async def buy(message: types.Message):
-    await message.answer(
-        f"Kaspi: {KASPI}\n\nПосле оплаты напиши: Я оплатил",
-        reply_markup=main_kb()
+    # СЛЕДУЮЩИЙ ВОПРОС (фикс залипания)
+    await state.update_data(
+        question_index=index + 1,
+        score=data["score"]
     )
 
+    await send_question(callback.message, state)
 
-# ===== PAID =====
-@dp.message_handler(lambda m: m.text.lower() == "я оплатил")
-async def paid(message: types.Message):
-    user = message.from_user
+# -------------------- ОБЪЯСНЕНИЕ --------------------
 
-    kb = types.InlineKeyboardMarkup()
-    kb.add(
-        types.InlineKeyboardButton("7 дней", callback_data=f"give_7_{user.id}"),
-        types.InlineKeyboardButton("30 дней", callback_data=f"give_30_{user.id}")
-    )
-    kb.add(types.InlineKeyboardButton("❌ Отказ", callback_data=f"deny_{user.id}"))
+@dp.callback_query(F.data == "explain")
+async def explain(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    index = data["question_index"]
 
-    await bot.send_message(ADMIN_ID, f"💰 {user.full_name} @{user.username} {user.id}", reply_markup=kb)
-    await message.answer("⏳ Ожидай подтверждения", reply_markup=main_kb())
+    if index < len(questions):
+        explanation = questions[index]["explanation"]
+        await callback.message.answer(f"📖 {explanation}")
+    else:
+        await callback.message.answer("Нет объяснения")
 
+# -------------------- НАЗАД --------------------
 
-# ===== ADMIN =====
-@dp.callback_query_handler(lambda c: True)
-async def admin(callback: types.CallbackQuery):
-    await callback.answer()
+@dp.callback_query(F.data == "back")
+async def back(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.answer("Выбери режим:", reply_markup=menu_kb())
 
-    data = callback.data
+# -------------------- ЗАПУСК --------------------
 
-    if data.startswith("deny_"):
-        uid = data.split("_")[1]
-        users[uid]["waiting_payment"] = False
-        await bot.send_message(uid, "❌ Отказ")
-        save_json(USERS_FILE, users)
-        return
+async def main():
+    await dp.start_polling(bot)
 
-    uid = data.split("_")[2]
-    days = 7 if "give_7_" in data else 30
-
-    users[uid]["premium_until"] = (datetime.now() + timedelta(days=days)).isoformat()
-    users[uid]["waiting_payment"] = False
-
-    save_json(USERS_FILE, users)
-
-    await bot.send_message(uid, f"✅ Доступ на {days} дней", reply_markup=main_kb())
-
-
-# ===== RUN =====
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(main())
