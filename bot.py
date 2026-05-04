@@ -22,22 +22,17 @@ dp = Dispatcher()
 conn = sqlite3.connect("db.sqlite3")
 cursor = conn.cursor()
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
-    username TEXT,
-    expiry TEXT
+cursor.execute(
+    "INSERT INTO payments (user_id, plan, status) VALUES (?, ?, ?)",
+    (user.id, plan, "pending")
 )
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS payments (
-    user_id INTEGER,
-    status TEXT
-)
-""")
-
 conn.commit()
+
+await bot.send_message(
+    ADMIN_ID,
+    f"💰 Заявка\n@{user.username}\nID: {user.id}\nТариф: {plan}",
+    reply_markup=admin_kb(user.id)
+)
 
 # ---------------- СОСТОЯНИЯ ----------------
 
@@ -118,8 +113,7 @@ async def start_quiz(callback: CallbackQuery, state: FSMContext, mode: str):
         score=0,
         free_count=0,
         mistakes=0,
-        mode=mode,
-        last_q=None
+        mode=mode
     )
 
     await send_question(callback.message, state)
@@ -170,12 +164,12 @@ async def answer(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("❌ Неверно")
         data["mistakes"] += 1
 
-    if data["mode"] == "exam" and data["mistakes"] >= 3:
-        await callback.message.answer("❌ Экзамен провален")
-        await state.clear()
-        return
-
-    await state.update_data(
+    if data["mode"] == "exam":
+        if data["mistakes"] >= 3:
+            await callback.message.answer("❌ Экзамен провален")
+            await state.clear()
+            return
+     await state.update_data(
         index=data["index"] + 1,
         score=data["score"],
         mistakes=data["mistakes"],
@@ -245,43 +239,80 @@ async def paid(callback: CallbackQuery, state: FSMContext):
 # ---------------- АДМИН ----------------
 
 @dp.callback_query(F.data.startswith("approve_7_"))
-async def approve_7(callback: CallbackQuery):
+async def approve7(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         return
 
     user_id = int(callback.data.split("_")[2])
+
+    cursor.execute("SELECT plan, status FROM payments WHERE user_id=? ORDER BY ROWID DESC LIMIT 1", (user_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        await callback.answer("Нет заявки")
+        return
+
+    plan, status = row
+
+    if status != "pending":
+        await callback.answer("Уже обработано")
+        return
+
+    if plan != "buy_7":
+        await callback.answer("❌ Пользователь выбрал НЕ 7 дней")
+        return
 
     expiry = datetime.now() + timedelta(days=7)
 
-    cursor.execute("UPDATE users SET expiry=? WHERE user_id=?",
-                   (expiry.isoformat(), user_id))
+    cursor.execute("UPDATE users SET expiry=? WHERE user_id=?", (expiry.isoformat(), user_id))
+    cursor.execute("UPDATE payments SET status='approved' WHERE user_id=?", (user_id,))
     conn.commit()
 
-    await bot.send_message(user_id, "✅ Доступ на 7 дней открыт")
-    await callback.message.edit_text("✔ 7 дней выдано")
+    await bot.send_message(user_id, "✅ Доступ на 7 дней открыт!")
+    await callback.message.edit_text("✔ Выдано 7 дней")
 
 @dp.callback_query(F.data.startswith("approve_30_"))
-async def approve_30(callback: CallbackQuery):
+async def approve30(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         return
 
     user_id = int(callback.data.split("_")[2])
 
+    cursor.execute("SELECT plan, status FROM payments WHERE user_id=? ORDER BY ROWID DESC LIMIT 1", (user_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        await callback.answer("Нет заявки")
+        return
+
+    plan, status = row
+
+    if status != "pending":
+        await callback.answer("Уже обработано")
+        return
+
+    if plan != "buy_30":
+        await callback.answer("❌ Пользователь выбрал НЕ 30 дней")
+        return
+
     expiry = datetime.now() + timedelta(days=30)
 
-    cursor.execute("UPDATE users SET expiry=? WHERE user_id=?",
-                   (expiry.isoformat(), user_id))
+    cursor.execute("UPDATE users SET expiry=? WHERE user_id=?", (expiry.isoformat(), user_id))
+    cursor.execute("UPDATE payments SET status='approved' WHERE user_id=?", (user_id,))
     conn.commit()
 
-    await bot.send_message(user_id, "✅ Доступ на 30 дней открыт")
-    await callback.message.edit_text("✔ 30 дней выдано")
-
+    await bot.send_message(user_id, "✅ Доступ на 30 дней открыт!")
+    await callback.message.edit_text("✔ Выдано 30 дней")
+    
 @dp.callback_query(F.data.startswith("decline_"))
 async def decline(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         return
 
     user_id = int(callback.data.split("_")[1])
+
+    cursor.execute("UPDATE payments SET status='declined' WHERE user_id=?", (user_id,))
+    conn.commit()
 
     await bot.send_message(user_id, "❌ Оплата отклонена")
     await callback.message.edit_text("❌ Отклонено")
