@@ -11,6 +11,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
 TOKEN = os.getenv("TOKEN")
+ADMIN_ID = 503301815
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -25,8 +26,9 @@ CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     username TEXT,
     access_until INTEGER DEFAULT 0,
-    free_until INTEGER DEFAULT 0,
-    last_answer INTEGER DEFAULT 0
+    last_answer INTEGER DEFAULT 0,
+    exams_passed INTEGER DEFAULT 0,
+    exams_failed INTEGER DEFAULT 0
 )
 """)
 
@@ -67,11 +69,6 @@ def has_access(user_id):
     row = cursor.fetchone()
     return row and row[0] > int(time.time())
 
-def has_free(user_id):
-    cursor.execute("SELECT free_until FROM users WHERE user_id=?", (user_id,))
-    row = cursor.fetchone()
-    return row and row[0] > int(time.time())
-
 # ---------------- КНОПКИ ----------------
 
 def menu_kb():
@@ -101,44 +98,44 @@ def pay_kb():
 
 @dp.message(Command("start"))
 async def start(message: Message, state: FSMContext):
-    now = int(time.time())
-
-    # 1 день бесплатно
-    free_until = now + 86400
-
-    cursor.execute("""
-    INSERT OR REPLACE INTO users (user_id, username, free_until)
-    VALUES (?, ?, ?)
-    """, (message.from_user.id, message.from_user.username, free_until))
-
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)",
+                   (message.from_user.id, message.from_user.username))
     conn.commit()
 
     await state.clear()
-    await message.answer(
-        "👋 Добро пожаловать!\n\n🎁 Тебе доступен 1 день бесплатно!\n\nВыбери режим:",
-        reply_markup=menu_kb()
-    )
+    await message.answer("Выбери режим:", reply_markup=menu_kb())
 
 # ---------------- РЕЖИМ ----------------
 
 @dp.callback_query(F.data == "training")
 async def training(callback: CallbackQuery, state: FSMContext):
     await state.set_state(QuizState.data)
-    await state.update_data(question_index=0, score=0, mistakes=0, mode="training")
+    await state.update_data(
+        question_index=0,
+        score=0,
+        mistakes=0,
+        free_count=0,
+        mode="training"
+    )
     await send_question(callback.message, state)
 
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
 
     if not has_access(callback.from_user.id):
-        await callback.message.answer(
-            "🔒 Экзамен доступен только после оплаты",
-            reply_markup=pay_kb()
-        )
+        await callback.message.answer("🔒 Экзамен доступен после оплаты", reply_markup=pay_kb())
         return
 
+    exam_questions = random.sample(questions, min(20, len(questions)))
+
     await state.set_state(QuizState.data)
-    await state.update_data(question_index=0, score=0, mistakes=0, mode="exam")
+    await state.update_data(
+        question_index=0,
+        score=0,
+        mistakes=0,
+        mode="exam",
+        exam_questions=exam_questions
+    )
     await send_question(callback.message, state)
 
 # ---------------- ВОПРОС ----------------
@@ -147,19 +144,32 @@ async def send_question(message: Message, state: FSMContext):
     data = await state.get_data()
     index = data["question_index"]
 
-    # доступ
     if data["mode"] == "training":
-        if data["free_count"] >= 3 and not has_access(message.chat.id):
-            await message.answer("🔒 Бесплатный лимит закончился", reply_markup=pay_kb())
+        if data["free_count"] >= 4 and not has_access(message.chat.id):
+            await message.answer("🔒 Лимит закончился", reply_markup=pay_kb())
             await state.clear()
             return
 
-    if index >= len(questions):
-        await message.answer(f"🎉 Конец! Баллы: {data['score']}")
-        await state.clear()
-        return
+        q = questions[index % len(questions)]
 
-    q = questions[index]
+    else:
+        exam_qs = data["exam_questions"]
+
+        if index >= len(exam_qs):
+            # результат экзамена
+            if data["mistakes"] < 3:
+                cursor.execute("UPDATE users SET exams_passed = exams_passed + 1 WHERE user_id=?", (message.chat.id,))
+                conn.commit()
+                await message.answer(f"🎉 Экзамен сдан! Баллы: {data['score']}")
+            else:
+                cursor.execute("UPDATE users SET exams_failed = exams_failed + 1 WHERE user_id=?", (message.chat.id,))
+                conn.commit()
+                await message.answer("❌ Экзамен не сдан")
+
+            await state.clear()
+            return
+
+        q = exam_qs[index]
 
     text = f"{q['q']}\n\n"
     for i, opt in enumerate(q["options"]):
@@ -172,15 +182,13 @@ async def send_question(message: Message, state: FSMContext):
 @dp.callback_query(F.data.startswith("ans_"))
 async def answer(callback: CallbackQuery, state: FSMContext):
 
-
-    # анти-накрутка (1 секунда)
     now = int(time.time())
 
     cursor.execute("SELECT last_answer FROM users WHERE user_id=?", (callback.from_user.id,))
     last = cursor.fetchone()[0]
 
     if now - last < 1:
-        await callback.answer("⏳ Подожди секунду")
+        await callback.answer("⏳ Подожди")
         return
 
     cursor.execute("UPDATE users SET last_answer=? WHERE user_id=?",
@@ -189,7 +197,11 @@ async def answer(callback: CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
     index = data["question_index"]
-    q = questions[index]
+
+    if data["mode"] == "exam":
+        q = data["exam_questions"][index]
+    else:
+        q = questions[index % len(questions)]
 
     user_answer = int(callback.data.split("_")[1])
 
@@ -200,8 +212,9 @@ async def answer(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("❌ Неверно")
         data["mistakes"] += 1
 
-    # экзамен провален
     if data["mode"] == "exam" and data["mistakes"] >= 3:
+        cursor.execute("UPDATE users SET exams_failed = exams_failed + 1 WHERE user_id=?", (callback.from_user.id,))
+        conn.commit()
         await callback.message.answer("❌ Экзамен провален")
         await state.clear()
         return
@@ -212,19 +225,9 @@ async def answer(callback: CallbackQuery, state: FSMContext):
         mistakes=data["mistakes"],
         free_count=data.get("free_count", 0) + 1
     )
-    
-    data = await state.get_data()
-    
-    if data["mode"] == "training":
-        if data["free_count"] >= 4 and not has_access(callback.from_user.id):
-            await callback.message.answer(
-                "🔒 Бесплатный лимит закончился",
-                reply_markup=pay_kb()
-            )
-            await state.clear()
-            return
-    
+
     await send_question(callback.message, state)
+
 # ---------------- ОБЪЯСНЕНИЕ ----------------
 
 @dp.callback_query(F.data == "explain")
@@ -232,10 +235,14 @@ async def explain(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     index = data["question_index"]
 
-    if index < len(questions):
-        await callback.message.answer(f"📖 {questions[index]['explanation']}")
+    if data["mode"] == "exam":
+        q = data["exam_questions"][index]
+    else:
+        q = questions[index % len(questions)]
 
-# ---------------- ПОКУПКА ----------------
+    await callback.message.answer(f"📖 {q['explanation']}")
+
+# ---------------- ОПЛАТА ----------------
 
 @dp.callback_query(F.data.startswith("buy_"))
 async def buy(callback: CallbackQuery, state: FSMContext):
@@ -243,22 +250,17 @@ async def buy(callback: CallbackQuery, state: FSMContext):
     await state.update_data(plan=plan)
 
     await callback.message.answer(
-        "💳 Оплата через Kaspi\n\n"
-        "Номер: 4400430352720152\n\n"
-        "После оплаты нажми кнопку ниже 👇",
+        "💳 Kaspi: 4400430352720152\nНажми 'Я оплатил'",
         reply_markup=pay_kb()
     )
 
-# ---------------- АВТО ОПЛАТА ----------------
-
 @dp.callback_query(F.data == "paid")
 async def paid(callback: CallbackQuery, state: FSMContext):
-
     data = await state.get_data()
     plan = data.get("plan")
 
     if not plan:
-        await callback.message.answer("Сначала выбери тариф")
+        await callback.message.answer("Выбери тариф")
         return
 
     days = 7 if plan == "7" else 30
@@ -269,6 +271,29 @@ async def paid(callback: CallbackQuery, state: FSMContext):
     conn.commit()
 
     await callback.message.answer(f"✅ Доступ на {days} дней открыт!")
+
+# ---------------- СТАТИСТИКА ----------------
+
+@dp.message(Command("admin"))
+async def admin(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM users WHERE access_until > ?", (int(time.time()),))
+    active = cursor.fetchone()[0]
+
+    cursor.execute("SELECT SUM(exams_passed), SUM(exams_failed) FROM users")
+    passed, failed = cursor.fetchone()
+
+    await message.answer(
+        f"👥 Пользователей: {total}\n"
+        f"💰 Активных: {active}\n"
+        f"✅ Сдали: {passed or 0}\n"
+        f"❌ Провалили: {failed or 0}"
+    )
 
 # ---------------- НАЗАД ----------------
 
