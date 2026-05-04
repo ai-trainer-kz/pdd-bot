@@ -175,7 +175,7 @@ async def answer(callback: CallbackQuery, state: FSMContext):
         mistakes=data["mistakes"],
         free_count=data["free_count"] + 1
     )
-
+    
     await send_question(callback.message, state)
 
 # ---------------- ОБЪЯСНЕНИЕ ----------------
