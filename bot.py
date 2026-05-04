@@ -157,17 +157,26 @@ async def send_question(message: Message, state: FSMContext):
     index = data["question_index"]
 
     if data["mode"] == "training":
-        if data["free_count"] >= 5 and not has_access(message.chat.id):
+        if data["free_count"] >= 4 and not has_access(message.chat.id):
             await message.answer("🔒 Бесплатный лимит закончился", reply_markup=pay_kb())
             return
 
     if index >= len(questions):
+
+    # если нет доступа → отправляем на оплату
+    if not has_access(message.chat.id):
+        await message.answer(
+            f"🎉 Конец!\nБаллы: {data['score']}\n\n🔒 Дальше нужен доступ",
+            reply_markup=pay_kb()
+        )
+    else:
         await message.answer(
             f"🎉 Конец!\nБаллы: {data['score']}",
             reply_markup=end_kb()
         )
-        await state.clear()
-        return
+
+    await state.clear()
+    return
 
     q = questions[index]
 
