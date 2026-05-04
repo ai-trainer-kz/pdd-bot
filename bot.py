@@ -148,10 +148,11 @@ async def send_question(message: Message, state: FSMContext):
     index = data["question_index"]
 
     # доступ
-    if not has_access(message.chat.id) and not has_free(message.chat.id):
-        await message.answer("🔒 Доступ закончился", reply_markup=pay_kb())
-        await state.clear()
-        return
+    if data["mode"] == "training":
+        if data["free_count"] >= 3 and not has_access(message.chat.id):
+            await message.answer("🔒 Бесплатный лимит закончился", reply_markup=pay_kb())
+            await state.clear()
+            return
 
     if index >= len(questions):
         await message.answer(f"🎉 Конец! Баллы: {data['score']}")
@@ -170,6 +171,7 @@ async def send_question(message: Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("ans_"))
 async def answer(callback: CallbackQuery, state: FSMContext):
+
 
     # анти-накрутка (1 секунда)
     now = int(time.time())
@@ -207,11 +209,22 @@ async def answer(callback: CallbackQuery, state: FSMContext):
     await state.update_data(
         question_index=index + 1,
         score=data["score"],
-        mistakes=data["mistakes"]
+        mistakes=data["mistakes"],
+        free_count=data.get("free_count", 0) + 1
     )
-
+    
+    data = await state.get_data()
+    
+    if data["mode"] == "training":
+        if data["free_count"] >= 4 and not has_access(callback.from_user.id):
+            await callback.message.answer(
+                "🔒 Бесплатный лимит закончился",
+                reply_markup=pay_kb()
+            )
+            await state.clear()
+            return
+    
     await send_question(callback.message, state)
-
 # ---------------- ОБЪЯСНЕНИЕ ----------------
 
 @dp.callback_query(F.data == "explain")
