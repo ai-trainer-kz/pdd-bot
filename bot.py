@@ -11,7 +11,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
 TOKEN = os.getenv("TOKEN")
-ADMIN_ID = 123456789  # <-- ВСТАВЬ СВОЙ TELEGRAM ID
+ADMIN_ID = 503301815
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
