@@ -146,7 +146,7 @@ async def send_question(message: Message, state: FSMContext):
 
     # лимит бесплатный
     if data["mode"] == "training":
-        if data["free_count"] >= 4 and not has_access(message.chat.id):
+        if data["free_count"] >= 3 and not has_access(message.chat.id):
             await message.answer("🔒 Бесплатный лимит закончился", reply_markup=pay_kb())
             return
 
