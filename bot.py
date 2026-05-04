@@ -41,6 +41,8 @@ class Quiz(StatesGroup):
     free_count = State()
     mistakes = State()
     mode = State()
+    plan = State()
+    last_q = State()
 
 # ---------------- ВОПРОСЫ ----------------
 
@@ -69,6 +71,7 @@ def pay_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 7 дней — 5000₸", callback_data="buy_7")],
         [InlineKeyboardButton(text="💳 30 дней — 10000₸", callback_data="buy_30")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_buy")],
         [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")]
     ])
 
@@ -100,7 +103,6 @@ async def start(message: Message, state: FSMContext):
 async def start_quiz(callback, state, mode):
     questions = random.sample(ALL_QUESTIONS, len(ALL_QUESTIONS))
 
-    await state.set_state(Quiz.questions)
     await state.update_data(
         questions=questions,
         index=0,
@@ -151,6 +153,7 @@ async def answer(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     q = data["questions"][data["index"]]
 
+    # 🔥 фиксируем вопрос для объяснения
     await state.update_data(last_q=data["index"])
 
     if callback.data == q["correct"]:
@@ -180,14 +183,14 @@ async def answer(callback: CallbackQuery, state: FSMContext):
 async def explanation(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
-    index = data.get("last_q")  # ВАЖНО!
+    index = data.get("last_q")
 
     if index is None:
         await callback.message.answer("Нет объяснения")
         return
 
-    q = questions[index]
-    
+    q = data["questions"][index]  # ✅ ИСПРАВЛЕНО
+
     text = q.get("explanation", "Объяснение пока не добавлено")
 
     await callback.message.answer(f"📖 {text}")
@@ -196,14 +199,22 @@ async def explanation(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data.in_(["buy_7", "buy_30"]))
 async def buy(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(plan=callback.data)
+    plan = callback.data
+    await state.update_data(plan=plan)
 
-    await callback.message.answer(
-        "💳 Оплата\n\nKaspi: 4400430352720152\n\n"
-        "После оплаты нажми «Я оплатил»"
-    )
+    if plan == "buy_7":
+        text = "💳 Оплата\nKaspi: 4400430352720152\nТариф: 7 дней — 5000₸"
+    else:
+        text = "💳 Оплата\nKaspi: 4400430352720152\nТариф: 30 дней — 10000₸"
 
-# ---------------- Я ОПЛАТИЛ ----------------
+    await callback.message.answer(text)
+
+@dp.callback_query(F.data == "cancel_buy")
+async def cancel(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.answer("Выбери режим:", reply_markup=menu())
+
+# ---------------- ОПЛАТА ----------------
 
 def admin_kb(user_id):
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -214,10 +225,14 @@ def admin_kb(user_id):
 
 @dp.callback_query(F.data == "paid")
 async def paid(callback: CallbackQuery, state: FSMContext):
-    user = callback.from_user
     data = await state.get_data()
+    plan = data.get("plan")
 
-    plan = data.get("plan", "не указан")
+    if not plan:
+        await callback.message.answer("Сначала выбери тариф")
+        return
+
+    user = callback.from_user
 
     await bot.send_message(
         ADMIN_ID,
@@ -242,7 +257,6 @@ async def approve7(callback: CallbackQuery):
     conn.commit()
 
     await bot.send_message(user_id, "✅ Доступ на 7 дней открыт!")
-    await callback.message.answer("✔ Выдано 7 дней")
 
 @dp.callback_query(F.data.startswith("approve_30_"))
 async def approve30(callback: CallbackQuery):
@@ -257,7 +271,6 @@ async def approve30(callback: CallbackQuery):
     conn.commit()
 
     await bot.send_message(user_id, "✅ Доступ на 30 дней открыт!")
-    await callback.message.answer("✔ Выдано 30 дней")
 
 @dp.callback_query(F.data.startswith("decline_"))
 async def decline(callback: CallbackQuery):
@@ -267,7 +280,6 @@ async def decline(callback: CallbackQuery):
     user_id = int(callback.data.split("_")[1])
 
     await bot.send_message(user_id, "❌ Оплата отклонена")
-    await callback.message.answer("Отклонено")
 
 # ---------------- НАЗАД ----------------
 
