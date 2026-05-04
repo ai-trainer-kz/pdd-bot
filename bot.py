@@ -152,6 +152,7 @@ async def send_question(message: Message, state: FSMContext):
 
 @dp.callback_query(F.data.in_(["A", "B", "C", "D"]))
 async def answer(callback: CallbackQuery, state: FSMContext):
+
     data = await state.get_data()
     q = data["questions"][data["index"]]
 
@@ -164,20 +165,22 @@ async def answer(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("❌ Неверно")
         data["mistakes"] += 1
 
+    # экзамен — проверка на провал
     if data["mode"] == "exam":
         if data["mistakes"] >= 3:
             await callback.message.answer("❌ Экзамен провален")
             await state.clear()
             return
-     await state.update_data(
-         index=data["index"] + 1,
-         score=data["score"],
-         mistakes=data["mistakes"],
-         free_count=data["free_count"] + 1
-    )
-    
-    await send_question(callback.message, state)
 
+    
+    await state.update_data(
+        index=data["index"] + 1,
+        score=data["score"],
+        mistakes=data["mistakes"],
+        free_count=data["free_count"] + 1
+    )
+
+    await send_question(callback.message, state)
 # ---------------- ОБЪЯСНЕНИЕ ----------------
 
 @dp.callback_query(F.data == "exp")
