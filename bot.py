@@ -22,6 +22,25 @@ dp = Dispatcher()
 conn = sqlite3.connect("db.sqlite3")
 cursor = conn.cursor()
 
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    username TEXT,
+    access_until INTEGER DEFAULT 0
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    plan TEXT,
+    status TEXT
+)
+""")
+
+conn.commit()
+
 # ---------------- СОСТОЯНИЯ ----------------
 
 class Quiz(StatesGroup):
