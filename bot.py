@@ -104,11 +104,12 @@ async def start(message: Message, state: FSMContext):
     await message.answer("Выбери режим:", reply_markup=menu())
 
 # ---------------- РЕЖИМ ----------------
+async def start_quiz(callback: CallbackQuery, state: FSMContext, mode: str):
 
-if mode == "exam":
-    questions = random.sample(ALL_QUESTIONS, 20)
-else:
-    questions = random.sample(ALL_QUESTIONS, len(ALL_QUESTIONS))
+    if mode == "exam":
+        questions = random.sample(ALL_QUESTIONS, 20)
+    else:
+        questions = random.sample(ALL_QUESTIONS, len(ALL_QUESTIONS))
 
     await state.update_data(
         questions=questions,
@@ -120,6 +121,7 @@ else:
     )
 
     await send_question(callback.message, state)
+
 
 @dp.callback_query(F.data == "train")
 async def train(callback: CallbackQuery, state: FSMContext):
