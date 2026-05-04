@@ -57,16 +57,21 @@ def menu():
         [InlineKeyboardButton(text="📝 Экзамен", callback_data="exam")]
     ])
 
-def answers():
-    return InlineKeyboardMarkup(inline_keyboard=[
+def answers(mode="train"):
+    kb = [
         [InlineKeyboardButton(text="A", callback_data="A"),
          InlineKeyboardButton(text="B", callback_data="B")],
         [InlineKeyboardButton(text="C", callback_data="C"),
-         InlineKeyboardButton(text="D", callback_data="D")],
-        [InlineKeyboardButton(text="📖 Объяснение", callback_data="exp")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")]
-    ])
+         InlineKeyboardButton(text="D", callback_data="D")]
+    ]
 
+    # ✅ только в тренировке показываем объяснение
+    if mode == "train":
+        kb.append([InlineKeyboardButton(text="📖 Объяснение", callback_data="exp")])
+
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back")])
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 def pay_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 7 дней — 5000₸", callback_data="buy_7")],
@@ -100,7 +105,9 @@ async def start(message: Message, state: FSMContext):
 
 # ---------------- РЕЖИМ ----------------
 
-async def start_quiz(callback, state, mode):
+if mode == "exam":
+    questions = random.sample(ALL_QUESTIONS, 20)
+else:
     questions = random.sample(ALL_QUESTIONS, len(ALL_QUESTIONS))
 
     await state.update_data(
@@ -144,7 +151,7 @@ async def send_question(message: Message, state: FSMContext):
     await state.update_data(current_q=data["index"])
 
     text = f"{q['question']}\n\nA) {q['A']}\nB) {q['B']}\nC) {q['C']}\nD) {q['D']}"
-    await message.answer(text, reply_markup=answers())
+    await message.answer(text, reply_markup=answers(data["mode"]))
 
 # ---------------- ОТВЕТ ----------------
 
@@ -163,10 +170,11 @@ async def answer(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("❌ Неверно")
         data["mistakes"] += 1
 
-    if data["mode"] == "exam" and data["mistakes"] >= 3:
-        await callback.message.answer("❌ Экзамен провален")
-        await state.clear()
-        return
+    if data["mode"] == "exam":
+        if data["mistakes"] >= 3:
+            await callback.message.answer("❌ Экзамен провален")
+            await state.clear()
+            return
 
     await state.update_data(
         index=data["index"] + 1,
@@ -250,28 +258,48 @@ async def approve7(callback: CallbackQuery):
         return
 
     user_id = int(callback.data.split("_")[2])
+
+    # ❌ проверка
+    cursor.execute("SELECT status FROM payments WHERE user_id=?", (user_id,))
+    if cursor.fetchone():
+        await callback.answer("Уже обработано")
+        return
+
     expiry = datetime.now() + timedelta(days=7)
 
     cursor.execute("UPDATE users SET expiry=? WHERE user_id=?",
                    (expiry.isoformat(), user_id))
+
+    cursor.execute("INSERT INTO payments VALUES (?, ?)", (user_id, "approved"))
     conn.commit()
 
     await bot.send_message(user_id, "✅ Доступ на 7 дней открыт!")
+    await callback.message.edit_text("✔ Выдано 7 дней")
 
-@dp.callback_query(F.data.startswith("approve_30_"))
-async def approve30(callback: CallbackQuery):
+dp.callback_query(F.data.startswith("approve_30_"))
+async def approve7(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         return
 
     user_id = int(callback.data.split("_")[2])
+
+    # ❌ проверка
+    cursor.execute("SELECT status FROM payments WHERE user_id=?", (user_id,))
+    if cursor.fetchone():
+        await callback.answer("Уже обработано")
+        return
+
     expiry = datetime.now() + timedelta(days=30)
 
     cursor.execute("UPDATE users SET expiry=? WHERE user_id=?",
                    (expiry.isoformat(), user_id))
+
+    cursor.execute("INSERT INTO payments VALUES (?, ?)", (user_id, "approved"))
     conn.commit()
 
     await bot.send_message(user_id, "✅ Доступ на 30 дней открыт!")
-
+    await callback.message.edit_text("✔ Выдано 30 дней")
+    
 @dp.callback_query(F.data.startswith("decline_"))
 async def decline(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -279,7 +307,16 @@ async def decline(callback: CallbackQuery):
 
     user_id = int(callback.data.split("_")[1])
 
+    cursor.execute("SELECT status FROM payments WHERE user_id=?", (user_id,))
+    if cursor.fetchone():
+        await callback.answer("Уже обработано")
+        return
+
+    cursor.execute("INSERT INTO payments VALUES (?, ?)", (user_id, "declined"))
+    conn.commit()
+
     await bot.send_message(user_id, "❌ Оплата отклонена")
+    await callback.message.edit_text("❌ Отклонено")
 
 # ---------------- НАЗАД ----------------
 
