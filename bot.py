@@ -151,6 +151,8 @@ async def answer(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     q = data["questions"][data["index"]]
 
+    await state.update_data(last_q=data["index"])
+
     if callback.data == q["correct"]:
         await callback.message.answer("✅ Верно")
         data["score"] += 1
@@ -178,13 +180,15 @@ async def answer(callback: CallbackQuery, state: FSMContext):
 async def explanation(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
-    idx = data.get("current_q")
-    if idx is None:
+    index = data.get("last_q")  # ВАЖНО!
+
+    if index is None:
         await callback.message.answer("Нет объяснения")
         return
 
-    q = data["questions"][idx]
-    text = q.get("explanation", "Объяснение не добавлено")
+    q = questions[index]
+    
+    text = q.get("explanation", "Объяснение пока не добавлено")
 
     await callback.message.answer(f"📖 {text}")
 
