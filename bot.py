@@ -3,6 +3,7 @@ import json
 import random
 import asyncio
 import sqlite3
+from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -25,7 +26,7 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     username TEXT,
-    paid INTEGER DEFAULT 0
+    expiry TEXT
 )
 """)
 
@@ -66,22 +67,35 @@ def answers():
 
 def pay_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Купить доступ", callback_data="buy")],
+        [InlineKeyboardButton(text="💳 7 дней — 5000₸", callback_data="buy_7")],
+        [InlineKeyboardButton(text="💳 30 дней — 10000₸", callback_data="buy_30")],
         [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")]
     ])
+
+# ---------------- ДОСТУП ----------------
+
+def has_access(user_id):
+    cursor.execute("SELECT expiry FROM users WHERE user_id=?", (user_id,))
+    row = cursor.fetchone()
+
+    if not row or row[0] is None:
+        return False
+
+    expiry = datetime.fromisoformat(row[0])
+    return datetime.now() < expiry
 
 # ---------------- СТАРТ ----------------
 
 @dp.message(Command("start"))
 async def start(message: Message, state: FSMContext):
-    cursor.execute("INSERT OR IGNORE INTO users VALUES (?, ?, 0)",
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)",
                    (message.from_user.id, message.from_user.username))
     conn.commit()
 
     await state.clear()
     await message.answer("Выбери режим:", reply_markup=menu())
 
-# ---------------- ЗАПУСК РЕЖИМА ----------------
+# ---------------- РЕЖИМ ----------------
 
 async def start_quiz(callback, state, mode):
     questions = random.sample(ALL_QUESTIONS, len(ALL_QUESTIONS))
@@ -111,11 +125,11 @@ async def exam(callback: CallbackQuery, state: FSMContext):
 async def send_question(message: Message, state: FSMContext):
     data = await state.get_data()
 
-    cursor.execute("SELECT paid FROM users WHERE user_id=?", (message.chat.id,))
-    paid = cursor.fetchone()[0]
-
-    if data["free_count"] >= 5 and not paid:
-        await message.answer("🔒 Лимит закончился", reply_markup=pay_kb())
+    if data["free_count"] >= 5 and not has_access(message.chat.id):
+        await message.answer(
+            "🔒 Бесплатный лимит закончился\nВыбери тариф:",
+            reply_markup=pay_kb()
+        )
         return
 
     if data["index"] >= len(data["questions"]):
@@ -144,9 +158,8 @@ async def answer(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("❌ Неверно")
         data["mistakes"] += 1
 
-    # ❗ экзамен провал
     if data["mode"] == "exam" and data["mistakes"] >= 3:
-        await callback.message.answer("❌ Экзамен провален (3 ошибки)")
+        await callback.message.answer("❌ Экзамен провален")
         await state.clear()
         return
 
@@ -175,64 +188,82 @@ async def explanation(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.answer(f"📖 {text}")
 
-# ---------------- ОПЛАТА ----------------
+# ---------------- ПОКУПКА ----------------
+
+@dp.callback_query(F.data.in_(["buy_7", "buy_30"]))
+async def buy(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(plan=callback.data)
+
+    await callback.message.answer(
+        "💳 Оплата\n\nKaspi: 4400430352720152\n\n"
+        "После оплаты нажми «Я оплатил»"
+    )
+
+# ---------------- Я ОПЛАТИЛ ----------------
+
+def admin_kb(user_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ 7 дней", callback_data=f"approve_7_{user_id}")],
+        [InlineKeyboardButton(text="✅ 30 дней", callback_data=f"approve_30_{user_id}")],
+        [InlineKeyboardButton(text="❌ Отказать", callback_data=f"decline_{user_id}")]
+    ])
 
 @dp.callback_query(F.data == "paid")
-async def paid(callback: CallbackQuery):
+async def paid(callback: CallbackQuery, state: FSMContext):
     user = callback.from_user
+    data = await state.get_data()
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"approve_{user.id}"),
-            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{user.id}")
-        ]
-    ])
+    plan = data.get("plan", "не указан")
 
     await bot.send_message(
         ADMIN_ID,
-        f"💰 Оплата от @{user.username}\nID: {user.id}",
-        reply_markup=kb
+        f"💰 Заявка\n@{user.username}\nID: {user.id}\nТариф: {plan}",
+        reply_markup=admin_kb(user.id)
     )
 
     await callback.message.answer("⏳ Ожидай подтверждения")
 
 # ---------------- АДМИН ----------------
 
-@dp.callback_query(F.data.startswith("approve_"))
-async def approve(callback: CallbackQuery):
+@dp.callback_query(F.data.startswith("approve_7_"))
+async def approve7(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         return
 
-    user_id = int(callback.data.split("_")[1])
+    user_id = int(callback.data.split("_")[2])
+    expiry = datetime.now() + timedelta(days=7)
 
-    cursor.execute("UPDATE users SET paid=1 WHERE user_id=?", (user_id,))
+    cursor.execute("UPDATE users SET expiry=? WHERE user_id=?",
+                   (expiry.isoformat(), user_id))
     conn.commit()
 
-    await bot.send_message(user_id, "✅ Доступ открыт!")
-    await callback.message.edit_text("Подтверждено")
+    await bot.send_message(user_id, "✅ Доступ на 7 дней открыт!")
+    await callback.message.answer("✔ Выдано 7 дней")
 
-@dp.callback_query(F.data.startswith("reject_"))
-async def reject(callback: CallbackQuery):
+@dp.callback_query(F.data.startswith("approve_30_"))
+async def approve30(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        return
+
+    user_id = int(callback.data.split("_")[2])
+    expiry = datetime.now() + timedelta(days=30)
+
+    cursor.execute("UPDATE users SET expiry=? WHERE user_id=?",
+                   (expiry.isoformat(), user_id))
+    conn.commit()
+
+    await bot.send_message(user_id, "✅ Доступ на 30 дней открыт!")
+    await callback.message.answer("✔ Выдано 30 дней")
+
+@dp.callback_query(F.data.startswith("decline_"))
+async def decline(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         return
 
     user_id = int(callback.data.split("_")[1])
 
     await bot.send_message(user_id, "❌ Оплата отклонена")
-    await callback.message.edit_text("Отклонено")
-
-@dp.message(Command("admin"))
-async def admin(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    cursor.execute("SELECT COUNT(*) FROM users")
-    users = cursor.fetchone()[0]
-
-    cursor.execute("SELECT COUNT(*) FROM users WHERE paid=1")
-    paid = cursor.fetchone()[0]
-
-    await message.answer(f"👥 Пользователи: {users}\n💰 Платные: {paid}")
+    await callback.message.answer("Отклонено")
 
 # ---------------- НАЗАД ----------------
 
