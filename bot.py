@@ -83,7 +83,7 @@ def menu_kb():
     ])
 
 def answers_kb(mode):
-    buttons = [
+    kb = [
         [InlineKeyboardButton(text="A", callback_data="ans_0"),
          InlineKeyboardButton(text="B", callback_data="ans_1")],
         [InlineKeyboardButton(text="C", callback_data="ans_2"),
@@ -91,11 +91,11 @@ def answers_kb(mode):
     ]
 
     if mode == "training":
-        buttons.append([InlineKeyboardButton(text="📖 Объяснение", callback_data="explain")])
+        kb.append([InlineKeyboardButton(text="📖 Объяснение", callback_data="explain")])
 
-    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back")])
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back")])
 
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 def pay_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -125,13 +125,7 @@ async def start(message: Message, state: FSMContext):
 @dp.callback_query(F.data == "training")
 async def training(callback: CallbackQuery, state: FSMContext):
     await state.set_state(QuizState.data)
-    await state.update_data(
-        question_index=0,
-        score=0,
-        mistakes=0,
-        mode="training",
-        free_count=0
-    )
+    await state.update_data(question_index=0, score=0, mistakes=0, mode="training", free_count=0)
     await send_question(callback.message, state)
 
 @dp.callback_query(F.data == "exam")
@@ -141,13 +135,7 @@ async def exam(callback: CallbackQuery, state: FSMContext):
         return
 
     await state.set_state(QuizState.data)
-    await state.update_data(
-        question_index=0,
-        score=0,
-        mistakes=0,
-        mode="exam",
-        free_count=0
-    )
+    await state.update_data(question_index=0, score=0, mistakes=0, mode="exam", free_count=0)
     await send_question(callback.message, state)
 
 # ---------------- ВОПРОС ----------------
@@ -156,27 +144,28 @@ async def send_question(message: Message, state: FSMContext):
     data = await state.get_data()
     index = data["question_index"]
 
+    # лимит бесплатный
     if data["mode"] == "training":
         if data["free_count"] >= 4 and not has_access(message.chat.id):
             await message.answer("🔒 Бесплатный лимит закончился", reply_markup=pay_kb())
             return
 
+    # конец теста
     if index >= len(questions):
 
-    # если нет доступа → отправляем на оплату
-    if not has_access(message.chat.id):
-        await message.answer(
-            f"🎉 Конец!\nБаллы: {data['score']}\n\n🔒 Дальше нужен доступ",
-            reply_markup=pay_kb()
-        )
-    else:
-        await message.answer(
-            f"🎉 Конец!\nБаллы: {data['score']}",
-            reply_markup=end_kb()
-        )
+        if not has_access(message.chat.id):
+            await message.answer(
+                f"🎉 Конец!\nБаллы: {data['score']}\n\n🔒 Дальше нужен доступ",
+                reply_markup=pay_kb()
+            )
+        else:
+            await message.answer(
+                f"🎉 Конец!\nБаллы: {data['score']}",
+                reply_markup=end_kb()
+            )
 
-    await state.clear()
-    return
+        await state.clear()
+        return
 
     q = questions[index]
 
@@ -205,6 +194,7 @@ async def answer(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("❌ Неверно")
         data["mistakes"] += 1
 
+    # экзамен провален
     if data["mode"] == "exam" and data["mistakes"] >= 3:
         await callback.message.answer("❌ Экзамен провален", reply_markup=end_kb())
         await state.clear()
@@ -242,12 +232,9 @@ async def explain(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("buy_"))
 async def buy(callback: CallbackQuery, state: FSMContext):
     plan = callback.data.split("_")[1]
-
     await state.update_data(plan=plan)
 
-    await callback.message.answer(
-        "💳 Kaspi: 4400430352720152\nПосле оплаты нажми 'Я оплатил'"
-    )
+    await callback.message.answer("💳 Kaspi: 4400430352720152\nПосле оплаты нажми 'Я оплатил'")
 
 # ---------------- Я ОПЛАТИЛ ----------------
 
