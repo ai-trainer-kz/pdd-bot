@@ -15,7 +15,6 @@ ADMIN_ID = 503301815
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
 # ================= БАЗА =================
 
 conn = sqlite3.connect("db.sqlite3")
