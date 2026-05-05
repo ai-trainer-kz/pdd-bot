@@ -224,18 +224,38 @@ async def answer(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "explain")
 async def explain(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    index = data["question_index"]
+    index = data["question_index"] - 1   # 👈 ВАЖНО
 
     qs = data.get("exam_qs") if data["mode"] == "exam" else questions
 
-    if index < len(qs):
-        await callback.message.answer(f"📖 {qs[index]['explanation']}")
+    if 0 <= index < len(qs):
+        await callback.message.answer(f"📖 {qs[index]['explanation']}"
 
 # ---------------- ПОКУПКА (АВТО) ----------------
 
 @dp.callback_query(F.data.startswith("buy_"))
-async def buy(callback: CallbackQuery):
-    days = 7 if "7" in callback.data else 30
+async def buy(callback: CallbackQuery, state: FSMContext):
+    plan = callback.data.split("_")[1]
+
+    await state.update_data(plan=plan)
+
+    await callback.message.answer(
+        "💳 Kaspi: 4400430352720152\n\nПосле оплаты нажми 'Я оплатил'",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")]
+        ])
+    )
+
+@dp.callback_query(F.data == "paid")
+async def paid(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    plan = data.get("plan")
+
+    if not plan:
+        await callback.message.answer("Сначала выбери тариф")
+        return
+
+    days = 7 if plan == "7" else 30
     access_until = int(time.time()) + days * 86400
 
     cursor.execute("UPDATE users SET access_until=? WHERE user_id=?",
