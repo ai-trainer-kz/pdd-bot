@@ -159,56 +159,121 @@ async def start(message: Message, state: FSMContext):
     await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
 
 # ================= РЕЖИМЫ =================
-
-@dp.callback_query(F.data=="training")
-async def training(callback: CallbackQuery, state:FSMContext):
+@dp.callback_query(F.data == "training")
+async def training(callback: CallbackQuery, state: FSMContext):
     await state.set_state(QuizState.data)
+
     qs = random.sample(questions, min(15, len(questions)))
 
-    await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode="training", used=[])
-        await send_question(callback.message, state)
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="training",
+        used=[]
+    )
 
-@dp.callback_query(F.data=="hard")
-async def hard(callback: CallbackQuery, state:FSMContext):
+    await send_question(callback.message, state)
+
+
+@dp.callback_query(F.data == "hard")
+async def hard(callback: CallbackQuery, state: FSMContext):
     weak = get_weak_questions(callback.from_user.id)
 
     if weak:
         qs = weak * 3
         random.shuffle(qs)
     else:
-        qs = [generate_ai_question() for _ in range(10)]
+        # 🔥 AI генерация + защита от дублей
+        qs = []
+        used_q = set()
+
+        while len(qs) < 10:
+            q = generate_ai_question()
+            if q["q"] not in used_q:
+                qs.append(q)
+                used_q.add(q["q"])
 
     await state.set_state(QuizState.data)
-    await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode="training")
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="training",
+        used=[]
+    )
 
     await send_question(callback.message, state)
 
-@dp.callback_query(F.data=="gai")
-async def gai(callback: CallbackQuery, state:FSMContext):
+
+@dp.callback_query(F.data == "gai")
+async def gai(callback: CallbackQuery, state: FSMContext):
     if not has_access(callback.from_user.id):
-        await callback.message.answer("🔒 Только после оплаты", reply_markup=pay_kb())
+        await callback.message.answer(
+            "🔒 Доступ к режиму ГАИ только после оплаты",
+            reply_markup=pay_kb()
+        )
         return
 
     qs = random.sample(questions, min(20, len(questions)))
 
+    # 🔥 добиваем до 20 AI-вопросами
+    used_q = {q["q"] for q in qs}
+
     while len(qs) < 20:
-        qs.append(generate_ai_question())
+        q = generate_ai_question()
+        if q["q"] not in used_q:
+            qs.append(q)
+            used_q.add(q["q"])
 
     await state.set_state(QuizState.data)
-    await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode="gai")
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="gai",
+        used=[]
+    )
 
     await send_question(callback.message, state)
 
-@dp.callback_query(F.data=="exam")
-async def exam(callback: CallbackQuery, state:FSMContext):
+
+@dp.callback_query(F.data == "exam")
+async def exam(callback: CallbackQuery, state: FSMContext):
     if not has_access(callback.from_user.id):
-        await callback.message.answer("🔒 Нужна оплата", reply_markup=pay_kb())
+        await callback.message.answer(
+            "🔒 Экзамен доступен только после оплаты",
+            reply_markup=pay_kb()
+        )
         return
 
-    qs = random.sample(questions * 10, 20)
+    # 🔥 перемешиваем и убираем повторы
+    qs = random.sample(questions * 5, min(20, len(questions * 5)))
+
+    # если мало — добавляем AI
+    used_q = {q["q"] for q in qs}
+
+    while len(qs) < 20:
+        q = generate_ai_question()
+        if q["q"] not in used_q:
+            qs.append(q)
+            used_q.add(q["q"])
 
     await state.set_state(QuizState.data)
-    await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode="exam")
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="exam",
+        used=[]
+    )
 
     await send_question(callback.message, state)
 
