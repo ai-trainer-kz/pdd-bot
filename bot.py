@@ -155,7 +155,7 @@ questions = [
 
 
 # ================= AI =================
-mport random
+import random
 
 def generate_ai_question():
     questions = [
