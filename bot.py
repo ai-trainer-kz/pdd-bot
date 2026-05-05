@@ -17,8 +17,9 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 # ================= БАЗА =================
 
-conn = sqlite3.connect("db.sqlite3")
-cursor = conn.cursor()
+DB_PATH = "db.sqlite3"
+
+conn = sqlite3.connect(DB_PATH)
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
@@ -363,18 +364,16 @@ async def start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
 
-import os
-
 @dp.message(F.text == "/backup")
 async def backup(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
 
-    if not os.path.exists("db.sqlite3"):
+    if not os.path.exists(DB_PATH):
         await message.answer("❌ База не найдена")
         return
 
-    await message.answer_document(open("db.sqlite3", "rb"))
+    await message.answer_document(open(DB_PATH, "rb"))
 
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
