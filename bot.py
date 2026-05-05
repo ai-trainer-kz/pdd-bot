@@ -363,13 +363,18 @@ async def start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
 
+import os
+
 @dp.message(Command("backup"))
 async def backup(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
 
-    try:
-        await message.answer_document(open("db.sqlite3", "rb"))
+    if not os.path.exists("db.sqlite3"):
+        await message.answer("❌ База ещё не создана")
+        return
+
+    await message.answer_document(open("db.sqlite3", "rb"))
     except:
         await message.answer("❌ База не найдена")
 @dp.callback_query(F.data == "exam")
