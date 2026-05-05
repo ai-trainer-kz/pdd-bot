@@ -4,6 +4,9 @@ import asyncio
 import sqlite3
 import time
 
+from db import init_db
+init_db()
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -156,39 +159,43 @@ base_questions = questions
 
 def generate_ai_question():
     templates = [
-        "Что должен сделать водитель?",
-        "Как правильно поступить?",
-        "Разрешено ли действие?",
-        "Кто имеет преимущество?",
-        "Что означает знак?",
-        "Какой сигнал разрешает движение?"
+        "Можно ли выполнить обгон",
+        "Разрешено ли действие",
+        "Что должен сделать водитель",
+        "Кто имеет преимущество",
+        "Разрешено ли движение"
     ]
 
     situations = [
         "на перекрестке",
-        "при повороте налево",
-        "при обгоне",
-        "в городе",
-        "на трассе",
-        "на пешеходном переходе"
+        "на мосту",
+        "в зоне пешеходного перехода",
+        "при двойной сплошной линии",
+        "на регулируемом перекрестке",
+        "при запрещающем сигнале светофора"
     ]
 
-    answers_pool = [
-        ["Уступить", "Продолжить движение", "Остановиться", "Сигналить"],
-        ["Можно", "Нельзя", "Только при разрешении", "По ситуации"],
-        ["Красный", "Желтый", "Зеленый", "Мигающий"],
-    ]
+    # ✅ ЧЕТКИЕ ВАРИАНТЫ (как в ПДД)
+    options = ["Разрешено", "Запрещено", "Разрешено с осторожностью", "Только при отсутствии помех"]
 
     q = f"{random.choice(templates)} {random.choice(situations)}?"
 
-    options = random.choice(answers_pool)
-    correct = random.randint(0, len(options)-1)
+    # ✅ логика ответа (НЕ РАНДОМ)
+    if "запрещающем сигнале" in q or "двойной сплошной" in q or "мосту" in q:
+        correct = 1  # Запрещено
+        explanation = "Согласно ПДД, это действие запрещено."
+    elif "пешеходного перехода" in q:
+        correct = 1
+        explanation = "Обгон запрещен на пешеходном переходе."
+    else:
+        correct = 3
+        explanation = "Разрешено только при отсутствии помех другим участникам движения."
 
     return {
         "q": q + f" ({random.randint(1000,9999)})",
         "options": options,
         "correct": correct,
-        "explanation": "Правильный ответ согласно ПДД",
+        "explanation": explanation,
         "topic": q
     }
 
@@ -428,43 +435,69 @@ async def send_question(message: Message, state: FSMContext):
     await state.update_data(used=used, index=i)
 
     # 🔥 конец
-    if i >= len(qs):
+   if i >= len(qs):
 
+        correct = data["score"]
+        wrong = data["mistakes"]
+        total = correct + wrong
+        percent = int((correct / total) * 100) if total else 0
+    
         if data["mode"] in ["exam", "gai"]:
+    
+            if percent >= 90:
+                status = "🏆 Отлично! Экзамен сдан"
+                advice = "Ты готов к реальному экзамену 🚀"
+            elif percent >= 75:
+                status = "✅ Хорошо, но есть ошибки"
+                advice = "Немного подтяни слабые темы"
+            else:
+                status = "❌ Экзамен не сдан"
+                advice = "Нужно ещё тренироваться"
+    
+            # обновляем БД
             if data["mistakes"] < 3:
                 cursor.execute(
                     "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=?",
                     (message.chat.id,)
                 )
-                text = "🎉 СДАН"
             else:
                 cursor.execute(
                     "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=?",
                     (message.chat.id,)
                 )
-                text = "❌ НЕ СДАН"
-
+    
             conn.commit()
+    
+            text = f"""
+    📊 <b>Результаты экзамена</b>
+    
+    ✅ Правильных: {correct}
+    ❌ Неправильных: {wrong}
+    
+    📈 Процент: {percent}%
+    
+    {status}
+    
+    💡 {advice}
+    """
+    
             await message.answer(text, reply_markup=result_kb())
-
+    
         else:
             await message.answer(
-                f"🎉 Конец! Баллы: {data['score']}",
+                f"""
+    📊 Результат тренировки
+    
+    ✅ Правильных: {correct}
+    ❌ Ошибок: {wrong}
+    
+    Баллы: {data['score']}
+    """,
                 reply_markup=result_kb()
             )
-
+    
         await state.clear()
         return
-
-    # ❗ используем ОБНОВЛЕННЫЙ i
-    q = qs[i]
-
-    text = f"{q['q']}\n\n"
-    for idx, opt in enumerate(q["options"]):
-        text += f"{chr(65+idx)}) {opt}\n"
-
-    await message.answer(text, reply_markup=answers_kb())
-
 # ================= ОТВЕТ =================
 
 @dp.callback_query(F.data.startswith("ans_"))
