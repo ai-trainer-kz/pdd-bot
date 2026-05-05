@@ -346,10 +346,10 @@ async def answer(callback:CallbackQuery, state:FSMContext):
 
     if user == q["correct"]:
         data["score"] += 1
-        await callback.message.answer("✅")
+        await callback.message.answer("✅ Верно")
     else:
         data["mistakes"] += 1
-        await callback.message.answer("❌")
+        await callback.message.answer("❌ Неверно")
 
         cursor.execute("""
         INSERT INTO mistakes (user_id, topic, count)
