@@ -20,6 +20,7 @@ dp = Dispatcher()
 DB_PATH = "db.sqlite3"
 
 conn = sqlite3.connect(DB_PATH)
+cursor = conn.cursor()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
