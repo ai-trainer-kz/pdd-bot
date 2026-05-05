@@ -79,69 +79,6 @@ def topics_kb():
         [InlineKeyboardButton(text="⬅️ В меню", callback_data="menu")]
     ])
 
-# ================= AI =================
-base_questions = questions
-
-TEMPLATES = [
-    "Что верно?",
-    "Выберите правильный вариант:",
-    "Как правильно поступить?",
-    "Как должен действовать водитель?",
-    "Укажите правильный ответ:",
-    "В данной ситуации водитель должен:",
-]
-
-EXTRA_VARIANTS = [
-    "на перекрестке",
-    "в городе",
-    "вне населенного пункта",
-    "в данной ситуации",
-    "при движении",
-    "в условиях дороги"
-]
-
-def generate_ai_question():
-    base = random.choice(base_questions)
-
-    # 🔥 вариативный текст
-    prefix = random.choice(TEMPLATES)
-    suffix = random.choice(EXTRA_VARIANTS)
-
-    q_text = f"{prefix} {base['q']} ({suffix})"
-
-    # 🔥 перемешивание ответов
-    options = base["options"][:]
-    correct_text = options[base["correct"]]
-
-    random.shuffle(options)
-
-    return {
-        "q": q_text,
-        "options": options,
-        "correct": options.index(correct_text),
-        "explanation": base["explanation"],
-        "topic": base.get("topic", base["q"])
-    }
-
-
-def generate_big_pool():
-    pool = []
-    used = set()
-
-    # 🔥 создаем реально разные вопросы
-    while len(pool) < 500:
-        q = generate_ai_question()
-
-        if q["q"] not in used:
-            used.add(q["q"])
-            pool.append(q)
-
-    return pool
-
-
-# 🔥 расширяем базу
-questions = base_questions + generate_big_pool()
-
 # ================= STATE =================
 
 class QuizState(StatesGroup):
