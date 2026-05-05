@@ -30,6 +30,16 @@ CREATE TABLE IF NOT EXISTS users (
     exams_failed INTEGER DEFAULT 0
 )
 """)
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS mistakes (
+    user_id INTEGER,
+    topic TEXT,
+    count INTEGER DEFAULT 1,
+    PRIMARY KEY (user_id, topic)
+)
+""")
+
 conn.commit()
 
 # ================= ВОПРОСЫ =================
@@ -51,16 +61,48 @@ questions = [
      "explanation":"Приоритет по ПДД"}
 ]
 
-# ================= AI ГЕНЕРАЦИЯ =================
+# ================= AI =================
 
-def generate_ai_question():
+def generate_ai_question(last_q=None):
     base = random.choice(questions)
+
+    while last_q and base["q"] == last_q:
+        base = random.choice(questions)
+
+    variants = [
+        base["q"],
+        f"Выберите правильный ответ: {base['q']}",
+        f"Что верно? {base['q']}",
+        f"Укажите правильный вариант: {base['q']}"
+    ]
+
+    text = random.choice(variants)
+
+    options = base["options"][:]
+    correct = options[base["correct"]]
+
+    random.shuffle(options)
+    new_correct = options.index(correct)
+
     return {
-        "q": base["q"] + " (новый)",
-        "options": base["options"],
-        "correct": base["correct"],
-        "explanation": base["explanation"]
+        "q": text,
+        "options": options,
+        "correct": new_correct,
+        "explanation": base["explanation"],
+        "topic": base["q"]
     }
+
+def get_weak_questions(user_id):
+    cursor.execute("""
+    SELECT topic FROM mistakes
+    WHERE user_id=?
+    ORDER BY count DESC
+    LIMIT 5
+    """, (user_id,))
+    rows = cursor.fetchall()
+
+    weak = [r[0] for r in rows]
+    return [q for q in questions if q["q"] in weak]
 
 # ================= STATE =================
 
@@ -83,7 +125,8 @@ def get_stats(user_id):
 def menu_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📘 Тренировка", callback_data="training")],
-        [InlineKeyboardButton(text="🧠 Сложные вопросы", callback_data="hard")],
+        [InlineKeyboardButton(text="🧠 Сложные темы", callback_data="hard")],
+        [InlineKeyboardButton(text="🎯 ГАИ режим", callback_data="gai")],
         [InlineKeyboardButton(text="📝 Экзамен", callback_data="exam")],
         [InlineKeyboardButton(text="⭐ Статистика", callback_data="stats")],
         [InlineKeyboardButton(text="🔥 Топ", callback_data="top")]
@@ -133,9 +176,29 @@ async def training(callback: CallbackQuery, state:FSMContext):
 
 @dp.callback_query(F.data=="hard")
 async def hard(callback: CallbackQuery, state:FSMContext):
-    ai_qs = [generate_ai_question() for _ in range(10)]
+    weak = get_weak_questions(callback.from_user.id)
+
+    if weak:
+        qs = weak * 3
+    else:
+        qs = [generate_ai_question() for _ in range(10)]
+
     await state.set_state(QuizState.data)
-    await state.update_data(qs=ai_qs, index=0, score=0, mistakes=0, mode="training")
+    await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode="training")
+
+    await send_question(callback.message, state)
+
+@dp.callback_query(F.data=="gai")
+async def gai(callback: CallbackQuery, state:FSMContext):
+    if not has_access(callback.from_user.id):
+        await callback.message.answer("🔒 Только после оплаты", reply_markup=pay_kb())
+        return
+
+    qs = random.sample(questions * 10, 20)
+
+    await state.set_state(QuizState.data)
+    await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode="gai")
+
     await send_question(callback.message, state)
 
 @dp.callback_query(F.data=="exam")
@@ -144,7 +207,7 @@ async def exam(callback: CallbackQuery, state:FSMContext):
         await callback.message.answer("🔒 Нужна оплата", reply_markup=pay_kb())
         return
 
-    qs = random.sample(questions*10, 20)
+    qs = random.sample(questions * 10, 20)
 
     await state.set_state(QuizState.data)
     await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode="exam")
@@ -160,8 +223,8 @@ async def send_question(message: Message, state:FSMContext):
 
     if i >= len(qs):
 
-        if data["mode"]=="exam":
-            if data["mistakes"]<3:
+        if data["mode"] in ["exam", "gai"]:
+            if data["mistakes"] < 3:
                 cursor.execute("UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=?", (message.chat.id,))
                 text="🎉 СДАН"
             else:
@@ -196,14 +259,22 @@ async def answer(callback:CallbackQuery, state:FSMContext):
     q = qs[i]
     user = int(callback.data.split("_")[1])
 
-    if user==q["correct"]:
-        data["score"]+=1
+    if user == q["correct"]:
+        data["score"] += 1
         await callback.message.answer("✅")
     else:
-        data["mistakes"]+=1
+        data["mistakes"] += 1
         await callback.message.answer("❌")
 
-    if data["mode"]=="exam" and data["mistakes"]>=3:
+        cursor.execute("""
+        INSERT INTO mistakes (user_id, topic, count)
+        VALUES (?, ?, 1)
+        ON CONFLICT(user_id, topic)
+        DO UPDATE SET count = count + 1
+        """, (callback.from_user.id, q.get("topic", q["q"])))
+        conn.commit()
+
+    if data["mode"] in ["exam", "gai"] and data["mistakes"] >= 3:
         cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=?", (callback.from_user.id,))
         conn.commit()
 
@@ -222,7 +293,7 @@ async def explain(callback:CallbackQuery, state:FSMContext):
     i = data["index"]-1
     qs = data["qs"]
 
-    if 0<=i<len(qs):
+    if 0 <= i < len(qs):
         await callback.message.answer(qs[i]["explanation"])
 
 # ================= ОПЛАТА =================
@@ -256,12 +327,12 @@ async def approve(callback:CallbackQuery):
         return
 
     _, user_id, plan = callback.data.split("_")
-    user_id=int(user_id)
+    user_id = int(user_id)
 
     days = 7 if plan=="7" else 30
-    until = int(time.time())+days*86400
+    until = int(time.time()) + days * 86400
 
-    cursor.execute("UPDATE users SET access_until=? WHERE user_id=?", (until,user_id))
+    cursor.execute("UPDATE users SET access_until=? WHERE user_id=?", (until, user_id))
     conn.commit()
 
     await bot.send_message(user_id, "✅ Доступ открыт")
@@ -284,7 +355,7 @@ async def top(callback:CallbackQuery):
 
     text="🔥 ТОП:\n"
     for i,r in enumerate(rows,1):
-        text+=f"{i}. {r[0]} — {r[1]}\n"
+        text += f"{i}. {r[0]} — {r[1]}\n"
 
     await callback.message.answer(text)
 
