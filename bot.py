@@ -220,16 +220,15 @@ async def answer(callback: CallbackQuery, state: FSMContext):
     await send_question(callback.message, state)
 
 # ---------------- ОБЪЯСНЕНИЕ ----------------
-
 @dp.callback_query(F.data == "explain")
 async def explain(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    index = data["question_index"] - 1   # 👈 ВАЖНО
+    index = data["question_index"] - 1
 
-    qs = data.get("exam_qs") if data["mode"] == "exam" else questions
+    qs = data.get("exam_qs", []) if data["mode"] == "exam" else questions
 
     if 0 <= index < len(qs):
-        await callback.message.answer(f"📖 {qs[index]['explanation']}"
+        await callback.message.answer(f"📖 {qs[index]['explanation']}")
 
 # ---------------- ПОКУПКА (АВТО) ----------------
 
