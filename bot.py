@@ -157,66 +157,33 @@ questions = [
 # ================= AI =================
 import random
 
+# 🔥 НОРМАЛЬНАЯ ГЕНЕРАЦИЯ (НЕ ЛОМАЕТ БОТА)
 def generate_ai_question():
-    questions = [
-        {
-            "q": "Вы приближаетесь к пешеходному переходу. На переход выходит пешеход. Что вы должны сделать?",
-            "options": [
-                "Продолжить движение",
-                "Уступить дорогу пешеходу",
-                "Посигналить",
-                "Ускориться"
-            ],
-            "correct": 1,
-            "explanation": "Водитель обязан уступить дорогу пешеходу на переходе."
-        },
-        {
-            "q": "Перед вами знак 'Уступи дорогу'. Как вы должны поступить?",
-            "options": [
-                "Продолжить движение без остановки",
-                "Остановиться всегда",
-                "Уступить дорогу транспортным средствам",
-                "Игнорировать знак"
-            ],
-            "correct": 2,
-            "explanation": "Знак обязывает уступить дорогу."
-        },
-        {
-            "q": "Загорелся желтый сигнал светофора. Что он означает?",
-            "options": [
-                "Разрешает движение",
-                "Запрещает движение",
-                "Предупреждает о смене сигнала",
-                "Можно ускориться"
-            ],
-            "correct": 2,
-            "explanation": "Желтый сигнал предупреждает о смене сигнала."
-        },
-        {
-            "q": "Вы движетесь по главной дороге, справа подъезжает автомобиль. Кто имеет преимущество?",
-            "options": [
-                "Вы",
-                "Автомобиль справа",
-                "Кто быстрее",
-                "Никто"
-            ],
-            "correct": 0,
-            "explanation": "На главной дороге вы имеете преимущество."
-        },
-        {
-            "q": "При повороте направо на перекрестке, что должен сделать водитель?",
-            "options": [
-                "Уступить пешеходам",
-                "Не смотреть по сторонам",
-                "Ускориться",
-                "Игнорировать разметку"
-            ],
-            "correct": 0,
-            "explanation": "При повороте водитель обязан уступить пешеходам."
-        }
-    ]
+    # берём вопрос из основной базы
+    q = random.choice(questions)
 
-    return random.choice(questions)
+    # делаем копию
+    new_q = {
+        "q": q["q"],
+        "options": q["options"][:],
+        "correct": q["correct"],
+        "explanation": q.get("explanation", ""),
+        "topic": q.get("topic", q["q"])
+    }
+
+    # перемешиваем варианты
+    opts = new_q["options"]
+    correct_text = opts[new_q["correct"]]
+
+    random.shuffle(opts)
+
+    new_q["options"] = opts
+    new_q["correct"] = opts.index(correct_text)
+
+    return new_q
+
+
+# 🔥 СЛОЖНЫЕ ВОПРОСЫ (оставляем как было, но безопасно)
 def get_weak_questions(user_id):
     cursor.execute("""
     SELECT topic FROM mistakes 
@@ -226,40 +193,13 @@ def get_weak_questions(user_id):
 
     topics = [row[0] for row in cursor.fetchall()]
 
-    weak = [q for q in questions if q.get("topic", q["q"]) in topics]
+    weak = []
+    for q in questions:
+        topic = q.get("topic", q["q"])
+        if topic in topics:
+            weak.append(q)
 
     return weak
-
-
-# === УЛУЧШАЕМ POOL ===
-
-def generate_big_pool():
-    pool = []
-
-    for i in range(1000):  # 🔥 больше
-        base = random.choice(base_questions)
-
-        text = base["q"] + f" ({i})"
-
-        opts = base["options"][:]
-        correct = opts[base["correct"]]
-
-        random.shuffle(opts)
-
-        pool.append({
-            "q": text,
-            "options": opts,
-            "correct": opts.index(correct),
-            "explanation": base["explanation"],
-            "topic": base.get("topic", base["q"])
-        })
-
-    return pool
-
-
-    questions = base_questions + generate_big_pool()
-
-
 # ================= РЕЖИМЫ =================
 
 @dp.callback_query(F.data == "training")
