@@ -257,7 +257,7 @@ def generate_big_pool():
     return pool
 
 
-questions = base_questions + generate_big_pool()
+    questions = base_questions + generate_big_pool()
 
 
 # ================= РЕЖИМЫ =================
