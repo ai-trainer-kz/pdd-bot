@@ -51,7 +51,7 @@ questions = [
         "q": "Кто имеет преимущество на перекрестке?",
         "options": ["Кто быстрее", "По договоренности", "По ПДД", "Кто сигналит"],
         "correct": 2,
-        "explanation": "Приоритет определяется знаками и ПДД."
+        "explanation": "Приоритет по ПДД"
     }
 ]
 
@@ -67,12 +67,21 @@ def has_access(user_id):
     row = cursor.fetchone()
     return row and row[0] > int(time.time())
 
+def get_user_stats(user_id):
+    cursor.execute("SELECT exams_passed, exams_failed FROM users WHERE user_id=?", (user_id,))
+    row = cursor.fetchone()
+    if not row:
+        return 0, 0
+    return row
+
 # ================= КНОПКИ =================
 
 def menu_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📘 Тренировка", callback_data="training")],
-        [InlineKeyboardButton(text="📝 Экзамен", callback_data="exam")]
+        [InlineKeyboardButton(text="📝 Экзамен", callback_data="exam")],
+        [InlineKeyboardButton(text="⭐ Моя статистика", callback_data="my_stats")],
+        [InlineKeyboardButton(text="🔥 Топ игроков", callback_data="top")]
     ])
 
 def answers_kb():
@@ -82,7 +91,7 @@ def answers_kb():
         [InlineKeyboardButton(text="C", callback_data="ans_2"),
          InlineKeyboardButton(text="D", callback_data="ans_3")],
         [InlineKeyboardButton(text="📖 Объяснение", callback_data="explain")],
-        [InlineKeyboardButton(text="⬅️ В меню", callback_data="back")]
+        [InlineKeyboardButton(text="⬅️ В меню", callback_data="menu")]
     ])
 
 def pay_kb():
@@ -94,7 +103,7 @@ def pay_kb():
 def result_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔁 Пройти ещё раз", callback_data="restart")],
-        [InlineKeyboardButton(text="⬅️ В меню", callback_data="back")]
+        [InlineKeyboardButton(text="⬅️ В меню", callback_data="menu")]
     ])
 
 # ================= START =================
@@ -107,12 +116,7 @@ async def start(message: Message, state: FSMContext):
 
     await state.clear()
 
-    await message.answer(
-        "🚗 <b>Добро пожаловать в ПДД тренажёр</b>\n\n"
-        "Выбери режим:",
-        reply_markup=menu_kb(),
-        parse_mode="HTML"
-    )
+    await message.answer("🚗 Добро пожаловать!\nВыбери режим:", reply_markup=menu_kb())
 
 # ================= РЕЖИМ =================
 
@@ -125,7 +129,7 @@ async def training(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
     if not has_access(callback.from_user.id):
-        await callback.message.answer("🔒 Доступ к экзамену только после оплаты", reply_markup=pay_kb())
+        await callback.message.answer("🔒 Экзамен доступен после оплаты", reply_markup=pay_kb())
         return
 
     exam_qs = random.sample(questions, min(20, len(questions)))
@@ -140,12 +144,6 @@ async def exam(callback: CallbackQuery, state: FSMContext):
 async def send_question(message: Message, state: FSMContext):
     data = await state.get_data()
     index = data["question_index"]
-
-    if data["mode"] == "training":
-        if data["free_count"] >= 5 and not has_access(message.chat.id):
-            await message.answer("🔒 Бесплатный лимит закончился", reply_markup=pay_kb())
-            await state.clear()
-            return
 
     qs = data.get("exam_qs") if data["mode"] == "exam" else questions
 
@@ -170,11 +168,11 @@ async def send_question(message: Message, state: FSMContext):
 
     q = qs[index]
 
-    text = f"<b>{q['q']}</b>\n\n"
+    text = f"{q['q']}\n\n"
     for i, opt in enumerate(q["options"]):
         text += f"{chr(65+i)}) {opt}\n"
 
-    await message.answer(text, reply_markup=answers_kb(), parse_mode="HTML")
+    await message.answer(text, reply_markup=answers_kb())
 
 # ================= ОТВЕТ =================
 
@@ -223,82 +221,54 @@ async def explain(callback: CallbackQuery, state: FSMContext):
     if 0 <= index < len(qs):
         await callback.message.answer(f"📖 {qs[index]['explanation']}")
 
-# ================= ПОКУПКА (АДМИН) =================
+# ================= RESTART =================
 
-@dp.callback_query(F.data.startswith("buy_"))
-async def buy(callback: CallbackQuery, state: FSMContext):
-    plan = callback.data.split("_")[1]
+@dp.callback_query(F.data == "restart")
+async def restart(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(QuizState.data)
+    await state.update_data(question_index=0, score=0, mistakes=0, free_count=0, mode="training")
+    await send_question(callback.message, state)
 
-    await state.update_data(plan=plan)
+# ================= MENU =================
 
-    await callback.message.answer(
-        "💳 Kaspi: 4400430352720152\n\nПосле оплаты нажми кнопку ниже",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")]
-        ])
-    )
-
-@dp.callback_query(F.data == "paid")
-async def paid(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    plan = data.get("plan")
-
-    if not plan:
-        await callback.message.answer("Сначала выбери тариф")
-        return
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"approve_{callback.from_user.id}_{plan}"),
-            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{callback.from_user.id}")
-        ]
-    ])
-
-    await bot.send_message(
-        ADMIN_ID,
-        f"💰 Оплата\nID: {callback.from_user.id}\nТариф: {plan}",
-        reply_markup=kb
-    )
-
-    await callback.message.answer("⏳ Ожидай подтверждения администратора")
-
-# ================= АДМИН =================
-
-@dp.callback_query(F.data.startswith("approve_"))
-async def approve(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        return
-
-    _, user_id, plan = callback.data.split("_")
-    user_id = int(user_id)
-
-    days = 7 if plan == "7" else 30
-    access_until = int(time.time()) + days * 86400
-
-    cursor.execute("UPDATE users SET access_until=? WHERE user_id=?", (access_until, user_id))
-    conn.commit()
-
-    await bot.send_message(user_id, f"✅ Доступ открыт на {days} дней")
-    await callback.message.edit_text("✅ Подтверждено")
+@dp.callback_query(F.data == "menu")
+async def menu(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.answer("Выбери режим:", reply_markup=menu_kb())
 
 # ================= СТАТИСТИКА =================
 
-@dp.message(Command("admin"))
-async def admin(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
+@dp.callback_query(F.data == "my_stats")
+async def my_stats(callback: CallbackQuery):
+    passed, failed = get_user_stats(callback.from_user.id)
+    total = passed + failed
+    percent = int((passed / total) * 100) if total > 0 else 0
 
-    cursor.execute("SELECT COUNT(*) FROM users")
-    total = cursor.fetchone()[0]
-
-    cursor.execute("SELECT SUM(exams_passed), SUM(exams_failed) FROM users")
-    passed, failed = cursor.fetchone()
-
-    await message.answer(
-        f"👥 Пользователей: {total}\n"
-        f"✅ Сдали: {passed or 0}\n"
-        f"❌ Не сдали: {failed or 0}"
+    await callback.message.answer(
+        f"📊 Твоя статистика:\n\n"
+        f"✅ Сдал: {passed}\n"
+        f"❌ Провалил: {failed}\n"
+        f"📈 Успешность: {percent}%"
     )
+
+@dp.callback_query(F.data == "top")
+async def top(callback: CallbackQuery):
+    cursor.execute("""
+    SELECT username, exams_passed 
+    FROM users 
+    ORDER BY exams_passed DESC 
+    LIMIT 5
+    """)
+
+    rows = cursor.fetchall()
+
+    text = "🔥 ТОП игроков:\n\n"
+    for i, row in enumerate(rows, start=1):
+        name = row[0] or "Без имени"
+        score = row[1]
+        text += f"{i}. {name} — {score}\n"
+
+    await callback.message.answer(text)
 
 # ================= RUN =================
 
