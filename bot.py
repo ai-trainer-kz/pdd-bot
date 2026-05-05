@@ -64,20 +64,55 @@ questions = [
 # ================= AI =================
 base_questions = questions
 
+def generate_ai_question():
+    base = random.choice(base_questions)
+
+    variants = [
+        base["q"],
+        f"Что правильно? {base['q']}",
+        f"Выбери верный вариант: {base['q']}",
+        f"Как нужно действовать? {base['q']}"
+    ]
+
+    text = random.choice(variants) + f" ({random.randint(1,9999)})"
+
+    opts = base["options"][:]
+    correct = opts[base["correct"]]
+
+    random.shuffle(opts)
+
+    return {
+        "q": text,
+        "options": opts,
+        "correct": opts.index(correct),
+        "explanation": base["explanation"],
+        "topic": base.get("topic", base["q"])
+    }
+
+
+def get_weak_questions(user_id):
+    cursor.execute("""
+    SELECT topic FROM mistakes 
+    WHERE user_id=? 
+    ORDER BY count DESC LIMIT 5
+    """, (user_id,))
+
+    topics = [row[0] for row in cursor.fetchall()]
+
+    weak = [q for q in questions if q.get("topic", q["q"]) in topics]
+
+    return weak
+
+
+# === УЛУЧШАЕМ POOL ===
+
 def generate_big_pool():
     pool = []
 
-    for i in range(300):  # 🔥 масштаб
+    for i in range(400):  # 🔥 больше
         base = random.choice(base_questions)
 
-        variants = [
-            base["q"],
-            f"Что верно? {base['q']}",
-            f"Выберите правильный вариант: {base['q']}",
-            f"Как правильно поступить? {base['q']}"
-        ]
-
-        text = random.choice(variants) + f" ({i})"
+        text = base["q"] + f" ({i})"
 
         opts = base["options"][:]
         correct = opts[base["correct"]]
@@ -94,8 +129,87 @@ def generate_big_pool():
 
     return pool
 
+
 questions = base_questions + generate_big_pool()
 
+
+# ================= РЕЖИМЫ =================
+
+@dp.callback_query(F.data == "training")
+async def training(callback: CallbackQuery, state: FSMContext):
+
+    await state.set_state(QuizState.data)
+
+    qs = random.sample(questions * 2, 20)
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="training",
+        used=[],
+        last_q=None
+    )
+
+    await send_question(callback.message, state)
+
+
+@dp.callback_query(F.data == "hard")
+async def hard(callback: CallbackQuery, state: FSMContext):
+
+    weak = get_weak_questions(callback.from_user.id)
+
+    if weak:
+        qs = weak * 3
+        random.shuffle(qs)
+    else:
+        qs = [generate_ai_question() for _ in range(15)]
+
+    await state.set_state(QuizState.data)
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="training",
+        used=[],
+        last_q=None
+    )
+
+    await send_question(callback.message, state)
+
+
+@dp.callback_query(F.data == "gai")
+async def gai(callback: CallbackQuery, state: FSMContext):
+
+    if not has_access(callback.from_user.id):
+        await callback.message.answer("🔒 Только после оплаты", reply_markup=pay_kb())
+        return
+
+    qs = random.sample(questions, min(30, len(questions)))
+
+    used_q = {q["q"] for q in qs}
+
+    while len(qs) < 30:
+        q = generate_ai_question()
+        if q["q"] not in used_q:
+            qs.append(q)
+            used_q.add(q["q"])
+
+    await state.set_state(QuizState.data)
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="gai",
+        used=[],
+        last_q=None
+    )
+
+    await send_question(callback.message, state)
 # ================= STATE =================
 
 class QuizState(StatesGroup):
@@ -157,90 +271,6 @@ async def start(message: Message, state: FSMContext):
 
     await state.clear()
     await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
-
-# ================= РЕЖИМЫ =================
-@dp.callback_query(F.data == "training")
-async def training(callback: CallbackQuery, state: FSMContext):
-    await state.set_state(QuizState.data)
-
-    qs = random.sample(questions, min(15, len(questions)))
-
-    await state.update_data(
-        qs=qs,
-        index=0,
-        score=0,
-        mistakes=0,
-        mode="training",
-        used=[]
-    )
-
-    await send_question(callback.message, state)
-
-
-@dp.callback_query(F.data == "hard")
-async def hard(callback: CallbackQuery, state: FSMContext):
-    weak = get_weak_questions(callback.from_user.id)
-
-    if weak:
-        qs = weak * 3
-        random.shuffle(qs)
-    else:
-        # 🔥 AI генерация + защита от дублей
-        qs = []
-        used_q = set()
-
-        while len(qs) < 10:
-            q = generate_ai_question()
-            if q["q"] not in used_q:
-                qs.append(q)
-                used_q.add(q["q"])
-
-    await state.set_state(QuizState.data)
-
-    await state.update_data(
-        qs=qs,
-        index=0,
-        score=0,
-        mistakes=0,
-        mode="training",
-        used=[]
-    )
-
-    await send_question(callback.message, state)
-
-
-@dp.callback_query(F.data == "gai")
-async def gai(callback: CallbackQuery, state: FSMContext):
-    if not has_access(callback.from_user.id):
-        await callback.message.answer(
-            "🔒 Доступ к режиму ГАИ только после оплаты",
-            reply_markup=pay_kb()
-        )
-        return
-
-    qs = random.sample(questions, min(20, len(questions)))
-
-    # 🔥 добиваем до 20 AI-вопросами
-    used_q = {q["q"] for q in qs}
-
-    while len(qs) < 20:
-        q = generate_ai_question()
-        if q["q"] not in used_q:
-            qs.append(q)
-            used_q.add(q["q"])
-
-    await state.set_state(QuizState.data)
-
-    await state.update_data(
-        qs=qs,
-        index=0,
-        score=0,
-        mistakes=0,
-        mode="gai",
-        used=[]
-    )
-
-    await send_question(callback.message, state)
 
 
 @dp.callback_query(F.data == "exam")
@@ -420,7 +450,7 @@ async def approve(callback:CallbackQuery):
     cursor.execute("UPDATE users SET access_until=? WHERE user_id=?", (until, user_id))
     conn.commit()
 
-    await bot.send_message(user_id, "✅ Доступ открыт")
+    await bot.send_message(user_id, "✅ Доступ открыт", reply_markup=menu_kb())
     await callback.message.edit_text("Готово")
 
 # ================= СТАТИСТИКА =================
@@ -454,8 +484,7 @@ async def menu(callback:CallbackQuery, state:FSMContext):
 @dp.callback_query(F.data=="restart")
 async def restart(callback:CallbackQuery, state:FSMContext):
     data = await state.get_data()
-    qs = random.sample(questions, min(len(data.get("qs", questions)), 15))
-
+    qs = random.sample(questions, 20)
     await state.set_state(QuizState.data)
     await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode=data.get("mode","training"))
 
