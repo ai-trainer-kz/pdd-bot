@@ -4,9 +4,6 @@ import asyncio
 import sqlite3
 import time
 
-from db import init_db
-init_db()
-
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -155,35 +152,46 @@ questions = [
 
 
 # ================= AI =================
-import random
+base_questions = questions
 
-# 🔥 НОРМАЛЬНАЯ ГЕНЕРАЦИЯ (НЕ ЛОМАЕТ БОТА)
 def generate_ai_question():
-    # берём вопрос из основной базы
-    q = random.choice(questions)
+    templates = [
+        "Что должен сделать водитель?",
+        "Как правильно поступить?",
+        "Разрешено ли действие?",
+        "Кто имеет преимущество?",
+        "Что означает знак?",
+        "Какой сигнал разрешает движение?"
+    ]
 
-    # делаем копию
-    new_q = {
-        "q": q["q"],
-        "options": q["options"][:],
-        "correct": q["correct"],
-        "explanation": q.get("explanation", ""),
-        "topic": q.get("topic", q["q"])
+    situations = [
+        "на перекрестке",
+        "при повороте налево",
+        "при обгоне",
+        "в городе",
+        "на трассе",
+        "на пешеходном переходе"
+    ]
+
+    answers_pool = [
+        ["Уступить", "Продолжить движение", "Остановиться", "Сигналить"],
+        ["Можно", "Нельзя", "Только при разрешении", "По ситуации"],
+        ["Красный", "Желтый", "Зеленый", "Мигающий"],
+    ]
+
+    q = f"{random.choice(templates)} {random.choice(situations)}?"
+
+    options = random.choice(answers_pool)
+    correct = random.randint(0, len(options)-1)
+
+    return {
+        "q": q + f" ({random.randint(1000,9999)})",
+        "options": options,
+        "correct": correct,
+        "explanation": "Правильный ответ согласно ПДД",
+        "topic": q
     }
 
-    # перемешиваем варианты
-    opts = new_q["options"]
-    correct_text = opts[new_q["correct"]]
-
-    random.shuffle(opts)
-
-    new_q["options"] = opts
-    new_q["correct"] = opts.index(correct_text)
-
-    return new_q
-
-
-# 🔥 СЛОЖНЫЕ ВОПРОСЫ (оставляем как было, но безопасно)
 def get_weak_questions(user_id):
     cursor.execute("""
     SELECT topic FROM mistakes 
@@ -193,13 +201,40 @@ def get_weak_questions(user_id):
 
     topics = [row[0] for row in cursor.fetchall()]
 
-    weak = []
-    for q in questions:
-        topic = q.get("topic", q["q"])
-        if topic in topics:
-            weak.append(q)
+    weak = [q for q in questions if q.get("topic", q["q"]) in topics]
 
     return weak
+
+
+# === УЛУЧШАЕМ POOL ===
+
+def generate_big_pool():
+    pool = []
+
+    for i in range(1000):  # 🔥 больше
+        base = random.choice(base_questions)
+
+        text = base["q"] + f" ({i})"
+
+        opts = base["options"][:]
+        correct = opts[base["correct"]]
+
+        random.shuffle(opts)
+
+        pool.append({
+            "q": text,
+            "options": opts,
+            "correct": opts.index(correct),
+            "explanation": base["explanation"],
+            "topic": base.get("topic", base["q"])
+        })
+
+    return pool
+
+
+questions = base_questions + generate_big_pool()
+
+
 # ================= РЕЖИМЫ =================
 
 @dp.callback_query(F.data == "training")
@@ -395,67 +430,41 @@ async def send_question(message: Message, state: FSMContext):
     # 🔥 конец
     if i >= len(qs):
 
-        correct = data["score"]
-        wrong = data["mistakes"]
-        total = correct + wrong
-        percent = int((correct / total) * 100) if total else 0
-    
         if data["mode"] in ["exam", "gai"]:
-    
-            if percent >= 90:
-                status = "🏆 Отлично! Экзамен сдан"
-                advice = "Ты готов к реальному экзамену 🚀"
-            elif percent >= 75:
-                status = "✅ Хорошо, но есть ошибки"
-                advice = "Немного подтяни слабые темы"
-            else:
-                status = "❌ Экзамен не сдан"
-                advice = "Нужно ещё тренироваться"
-    
-            # обновляем БД
             if data["mistakes"] < 3:
                 cursor.execute(
                     "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=?",
                     (message.chat.id,)
                 )
+                text = "🎉 СДАН"
             else:
                 cursor.execute(
                     "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=?",
                     (message.chat.id,)
                 )
-    
+                text = "❌ НЕ СДАН"
+
             conn.commit()
-    
-            text = f"""
-    📊 <b>Результаты экзамена</b>
-    
-    ✅ Правильных: {correct}
-    ❌ Неправильных: {wrong}
-    
-    📈 Процент: {percent}%
-    
-    {status}
-    
-    💡 {advice}
-    """
-    
             await message.answer(text, reply_markup=result_kb())
-    
+
         else:
             await message.answer(
-                f"""
-    📊 Результат тренировки
-    
-    ✅ Правильных: {correct}
-    ❌ Ошибок: {wrong}
-    
-    Баллы: {data['score']}
-    """,
+                f"🎉 Конец! Баллы: {data['score']}",
                 reply_markup=result_kb()
             )
-    
+
         await state.clear()
         return
+
+    # ❗ используем ОБНОВЛЕННЫЙ i
+    q = qs[i]
+
+    text = f"{q['q']}\n\n"
+    for idx, opt in enumerate(q["options"]):
+        text += f"{chr(65+idx)}) {opt}\n"
+
+    await message.answer(text, reply_markup=answers_kb())
+
 # ================= ОТВЕТ =================
 
 @dp.callback_query(F.data.startswith("ans_"))
