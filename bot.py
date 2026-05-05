@@ -55,6 +55,30 @@ questions = [
     }
 ]
 
+topics = {
+    "signs": [],
+    "speed": [],
+    "priority": []
+}
+
+for q in questions:
+    if "светофора" in q["q"]:
+        topics["signs"].append(q)
+    elif "скорость" in q["q"]:
+        topics["speed"].append(q)
+    else:
+        topics["priority"].append(q)
+
+# === КНОПКА ТЕМ ===
+
+def topics_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚦 Знаки", callback_data="topic_signs")],
+        [InlineKeyboardButton(text="🚗 Скорость", callback_data="topic_speed")],
+        [InlineKeyboardButton(text="⚠️ Приоритет", callback_data="topic_priority")],
+        [InlineKeyboardButton(text="⬅️ В меню", callback_data="menu")]
+    ])
+
 # ================= STATE =================
 
 class QuizState(StatesGroup):
@@ -132,8 +156,28 @@ async def exam(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("🔒 Экзамен доступен после оплаты", reply_markup=pay_kb())
         return
 
-    exam_qs = random.sample(questions, min(20, len(questions)))
+@dp.callback_query(F.data == "topics")
+async def topics_menu(callback: CallbackQuery):
+    await callback.message.answer("Выбери тему:", reply_markup=topics_kb())
 
+@dp.callback_query(F.data.startswith("topic_"))
+async def topic_start(callback: CallbackQuery, state: FSMContext):
+    topic = callback.data.split("_")[1]
+
+    qs = topics.get(topic, questions)
+
+    await state.set_state(QuizState.data)
+    await state.update_data(
+        question_index=0,
+        score=0,
+        mistakes=0,
+        mode="topic",
+        topic_qs=qs
+    )
+
+    await send_question(callback.message, state)
+
+    exam_qs = random.sample(questions * 10, 20)
     await state.set_state(QuizState.data)
     await state.update_data(question_index=0, score=0, mistakes=0, mode="exam", exam_qs=exam_qs)
 
@@ -145,7 +189,12 @@ async def send_question(message: Message, state: FSMContext):
     data = await state.get_data()
     index = data["question_index"]
 
-    qs = data.get("exam_qs") if data["mode"] == "exam" else questions
+    if data["mode"] == "exam":
+        qs = data.get("exam_qs")
+    elif data["mode"] == "topic":
+        qs = data.get("topic_qs")
+    else:
+        qs = questions
 
     if index >= len(qs):
 
@@ -222,11 +271,29 @@ async def explain(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(f"📖 {qs[index]['explanation']}")
 
 # ================= RESTART =================
-
 @dp.callback_query(F.data == "restart")
 async def restart(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    mode = data.get("mode", "training")
+
     await state.set_state(QuizState.data)
-    await state.update_data(question_index=0, score=0, mistakes=0, free_count=0, mode="training")
+
+    new_data = {
+        "question_index": 0,
+        "score": 0,
+        "mistakes": 0,
+        "free_count": 0,
+        "mode": mode
+    }
+
+    if mode == "exam":
+        new_data["exam_qs"] = random.sample(questions * 10, 20)
+
+    if mode == "topic":
+        new_data["topic_qs"] = data.get("topic_qs")
+
+    await state.update_data(**new_data)
+
     await send_question(callback.message, state)
 
 # ================= MENU =================
@@ -235,6 +302,15 @@ async def restart(callback: CallbackQuery, state: FSMContext):
 async def menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer("Выбери режим:", reply_markup=menu_kb())
+
+def menu_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📘 Тренировка", callback_data="training")],
+        [InlineKeyboardButton(text="🧠 По темам", callback_data="topics")],
+        [InlineKeyboardButton(text="📝 Экзамен", callback_data="exam")],
+        [InlineKeyboardButton(text="⭐ Моя статистика", callback_data="my_stats")],
+        [InlineKeyboardButton(text="🔥 Топ игроков", callback_data="top")]
+    ])
 
 # ================= СТАТИСТИКА =================
 
@@ -248,9 +324,9 @@ async def my_stats(callback: CallbackQuery):
         f"📊 Твоя статистика:\n\n"
         f"✅ Сдал: {passed}\n"
         f"❌ Провалил: {failed}\n"
-        f"📈 Успешность: {percent}%"
+        f"📈 Успешность: {percent}%\n\n"
+        f"🧠 Рекомендуем тренировать слабые темы"
     )
-
 @dp.callback_query(F.data == "top")
 async def top(callback: CallbackQuery):
     cursor.execute("""
