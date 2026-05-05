@@ -365,13 +365,13 @@ async def start(message: Message, state: FSMContext):
 
 import os
 
-@dp.message(Command("backup"))
+@dp.message(F.text == "/backup")
 async def backup(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
 
     if not os.path.exists("db.sqlite3"):
-        await message.answer("❌ База ещё не создана")
+        await message.answer("❌ База не найдена")
         return
 
     await message.answer_document(open("db.sqlite3", "rb"))
