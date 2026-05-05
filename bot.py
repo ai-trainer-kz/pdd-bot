@@ -27,10 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT,
     access_until INTEGER DEFAULT 0,
     exams_passed INTEGER DEFAULT 0,
-    exams_failed INTEGER DEFAULT 0,
-    xp INTEGER DEFAULT 0,
-    streak INTEGER DEFAULT 0,
-    last_answer INTEGER DEFAULT 0
+    exams_failed INTEGER DEFAULT 0
 )
 """)
 
@@ -65,40 +62,39 @@ questions = [
 ]
 
 # ================= AI =================
+base_questions = questions
 
-def generate_ai_question():
-    base = random.choice(questions)
+def generate_big_pool():
+    pool = []
 
-    options = base["options"][:]
-    correct_text = options[base["correct"]]
-    random.shuffle(options)
+    for i in range(300):  # 🔥 масштаб
+        base = random.choice(base_questions)
 
-    return {
-        "q": random.choice([
+        variants = [
             base["q"],
-            f"Как правильно: {base['q']}",
-            f"Что должен сделать водитель: {base['q']}"
-        ]),
-        "options": options,
-        "correct": options.index(correct_text),
-        "explanation": base["explanation"],
-        "topic": base["q"]
-    }
+            f"Что верно? {base['q']}",
+            f"Выберите правильный вариант: {base['q']}",
+            f"Как правильно поступить? {base['q']}"
+        ]
 
-# ================= СЛОЖНЫЕ ТЕМЫ =================
+        text = random.choice(variants) + f" ({i})"
 
-def get_weak_questions(user_id):
-    cursor.execute("""
-        SELECT topic FROM mistakes
-        WHERE user_id=?
-        ORDER BY count DESC
-        LIMIT 5
-    """, (user_id,))
-    
-    rows = cursor.fetchall()
-    topics = [r[0] for r in rows]
+        opts = base["options"][:]
+        correct = opts[base["correct"]]
 
-    return [q for q in questions if q["q"] in topics]
+        random.shuffle(opts)
+
+        pool.append({
+            "q": text,
+            "options": opts,
+            "correct": opts.index(correct),
+            "explanation": base["explanation"],
+            "topic": base.get("topic", base["q"])
+        })
+
+    return pool
+
+questions = base_questions + generate_big_pool()
 
 # ================= STATE =================
 
@@ -115,28 +111,6 @@ def has_access(user_id):
 def get_stats(user_id):
     cursor.execute("SELECT exams_passed, exams_failed FROM users WHERE user_id=?", (user_id,))
     return cursor.fetchone() or (0,0)
-
-def update_xp(user_id, correct):
-    cursor.execute("SELECT xp, streak, last_answer FROM users WHERE user_id=?", (user_id,))
-    xp, streak, last = cursor.fetchone()
-
-    now = int(time.time())
-
-    if correct:
-        if now - last < 3600:
-            streak += 1
-        else:
-            streak = 1
-
-        xp += 10 + streak
-    else:
-        streak = 0
-
-    cursor.execute("""
-        UPDATE users SET xp=?, streak=?, last_answer=? WHERE user_id=?
-    """, (xp, streak, now, user_id))
-
-    conn.commit()
 
 # ================= КНОПКИ =================
 
@@ -177,7 +151,7 @@ def result_kb():
 
 @dp.message(Command("start"))
 async def start(message: Message, state: FSMContext):
-    cursor.execute("INSERT OR IGNORE INTO users VALUES (?, ?, 0, 0, 0, 0, 0, 0)",
+    cursor.execute("INSERT OR IGNORE INTO users VALUES (?, ?, 0, 0, 0)",
                    (message.from_user.id, message.from_user.username))
     conn.commit()
 
@@ -185,81 +159,173 @@ async def start(message: Message, state: FSMContext):
     await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
 
 # ================= РЕЖИМЫ =================
-
 @dp.callback_query(F.data == "training")
 async def training(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-
-    qs = random.sample(questions * 3, 15)
-
     await state.set_state(QuizState.data)
-    await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode="training")
+
+    qs = random.sample(questions, min(15, len(questions)))
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="training",
+        used=[]
+    )
 
     await send_question(callback.message, state)
 
 
 @dp.callback_query(F.data == "hard")
 async def hard(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-
     weak = get_weak_questions(callback.from_user.id)
-    qs = weak * 3 if weak else [generate_ai_question() for _ in range(10)]
+
+    if weak:
+        qs = weak * 3
+        random.shuffle(qs)
+    else:
+        # 🔥 AI генерация + защита от дублей
+        qs = []
+        used_q = set()
+
+        while len(qs) < 10:
+            q = generate_ai_question()
+            if q["q"] not in used_q:
+                qs.append(q)
+                used_q.add(q["q"])
 
     await state.set_state(QuizState.data)
-    await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode="training")
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="training",
+        used=[]
+    )
 
     await send_question(callback.message, state)
 
 
 @dp.callback_query(F.data == "gai")
 async def gai(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-
     if not has_access(callback.from_user.id):
-        await callback.message.answer("🔒 Нужна оплата", reply_markup=pay_kb())
+        await callback.message.answer(
+            "🔒 Доступ к режиму ГАИ только после оплаты",
+            reply_markup=pay_kb()
+        )
         return
 
     qs = random.sample(questions, min(20, len(questions)))
 
+    # 🔥 добиваем до 20 AI-вопросами
+    used_q = {q["q"] for q in qs}
+
     while len(qs) < 20:
-        qs.append(generate_ai_question())
+        q = generate_ai_question()
+        if q["q"] not in used_q:
+            qs.append(q)
+            used_q.add(q["q"])
 
     await state.set_state(QuizState.data)
-    await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode="gai")
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="gai",
+        used=[]
+    )
 
     await send_question(callback.message, state)
 
 
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-
     if not has_access(callback.from_user.id):
-        await callback.message.answer("🔒 Нужна оплата", reply_markup=pay_kb())
+        await callback.message.answer(
+            "🔒 Экзамен доступен только после оплаты",
+            reply_markup=pay_kb()
+        )
         return
 
-    qs = random.sample(questions * 5, 20)
+    # 🔥 перемешиваем и убираем повторы
+    qs = random.sample(questions * 5, min(20, len(questions * 5)))
+
+    # если мало — добавляем AI
+    used_q = {q["q"] for q in qs}
+
+    while len(qs) < 20:
+        q = generate_ai_question()
+        if q["q"] not in used_q:
+            qs.append(q)
+            used_q.add(q["q"])
 
     await state.set_state(QuizState.data)
-    await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode="exam")
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="exam",
+        used=[]
+    )
 
     await send_question(callback.message, state)
 
 # ================= ВОПРОС =================
-
 async def send_question(message: Message, state: FSMContext):
     data = await state.get_data()
     qs = data["qs"]
     i = data["index"]
 
+    used = data.get("used", [])
+
+    # 🔥 анти-дубликаты
+    while i < len(qs) and qs[i]["q"] in used:
+        i += 1
+
+    # ❗ ОБНОВЛЯЕМ ЛОКАЛЬНО И В STATE
+    if i < len(qs):
+        used.append(qs[i]["q"])
+    
+    await state.update_data(used=used, index=i)
+
+    # 🔥 конец
     if i >= len(qs):
-        await message.answer(f"🎉 Конец! Баллы: {data['score']}", reply_markup=result_kb())
+
+        if data["mode"] in ["exam", "gai"]:
+            if data["mistakes"] < 3:
+                cursor.execute(
+                    "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=?",
+                    (message.chat.id,)
+                )
+                text = "🎉 СДАН"
+            else:
+                cursor.execute(
+                    "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=?",
+                    (message.chat.id,)
+                )
+                text = "❌ НЕ СДАН"
+
+            conn.commit()
+            await message.answer(text, reply_markup=result_kb())
+
+        else:
+            await message.answer(
+                f"🎉 Конец! Баллы: {data['score']}",
+                reply_markup=result_kb()
+            )
+
         await state.clear()
         return
 
+    # ❗ используем ОБНОВЛЕННЫЙ i
     q = qs[i]
-
-    await state.update_data(current_q=q)
 
     text = f"{q['q']}\n\n"
     for idx, opt in enumerate(q["options"]):
@@ -270,117 +336,130 @@ async def send_question(message: Message, state: FSMContext):
 # ================= ОТВЕТ =================
 
 @dp.callback_query(F.data.startswith("ans_"))
-async def answer(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-
+async def answer(callback:CallbackQuery, state:FSMContext):
     data = await state.get_data()
-    q = data["qs"][data["index"]]
+    qs = data["qs"]
+    i = data["index"]
 
+    q = qs[i]
     user = int(callback.data.split("_")[1])
 
-    correct = user == q["correct"]
-
-    if correct:
+    if user == q["correct"]:
         data["score"] += 1
-        await callback.message.answer("✅ Верно")
+        await callback.message.answer("✅")
     else:
         data["mistakes"] += 1
-        await callback.message.answer("❌ Неверно")
+        await callback.message.answer("❌")
 
-    update_xp(callback.from_user.id, correct)
+        cursor.execute("""
+        INSERT INTO mistakes (user_id, topic, count)
+        VALUES (?, ?, 1)
+        ON CONFLICT(user_id, topic)
+        DO UPDATE SET count = count + 1
+        """, (callback.from_user.id, q.get("topic", q["q"])))
+        conn.commit()
 
-    await state.update_data(index=data["index"]+1, score=data["score"], mistakes=data["mistakes"])
+    if data["mode"] in ["exam", "gai"] and data["mistakes"] >= 3:
+        cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=?", (callback.from_user.id,))
+        conn.commit()
 
+        await callback.message.answer("❌ Провал", reply_markup=result_kb())
+        await state.clear()
+        return
+
+    await state.update_data(index=i+1, score=data["score"], mistakes=data["mistakes"])
     await send_question(callback.message, state)
 
 # ================= ОБЪЯСНЕНИЕ =================
 
 @dp.callback_query(F.data=="explain")
-async def explain(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-
+async def explain(callback:CallbackQuery, state:FSMContext):
     data = await state.get_data()
-    q = data.get("current_q")
+    i = data["index"]-1
+    qs = data["qs"]
 
-    if q:
-        await callback.message.answer(q["explanation"])
+    if 0 <= i < len(qs):
+        await callback.message.answer(qs[i]["explanation"])
 
 # ================= ОПЛАТА =================
 
 @dp.callback_query(F.data.startswith("buy_"))
-async def buy(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-
+async def buy(callback:CallbackQuery, state:FSMContext):
     plan = callback.data.split("_")[1]
-
-    cursor.execute("INSERT OR IGNORE INTO users VALUES (?, ?, 0, 0, 0, 0, 0, 0)",
-                   (callback.from_user.id, callback.from_user.username))
-    conn.commit()
-
     await state.update_data(plan=plan)
 
-    await callback.message.answer("Kaspi: 4400430352720152\nПосле оплаты нажми 'Я оплатил'")
+    await callback.message.answer("Kaspi: 4400430352720152\nПосле оплаты нажми кнопку ниже")
 
 @dp.callback_query(F.data=="paid")
-async def paid(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-
+async def paid(callback:CallbackQuery, state:FSMContext):
     data = await state.get_data()
     plan = data.get("plan")
 
     if not plan:
-        await callback.message.answer("Выбери тариф")
+        await callback.message.answer("Сначала выбери тариф")
         return
 
-    # 🔥 авто-подтверждение (заглушка Kaspi API)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"approve_{callback.from_user.id}_{plan}")]
+    ])
+
+    await bot.send_message(ADMIN_ID, f"Оплата от {callback.from_user.id} тариф {plan}", reply_markup=kb)
+    await callback.message.answer("⏳ Жди подтверждения")
+
+@dp.callback_query(F.data.startswith("approve_"))
+async def approve(callback:CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        return
+
+    _, user_id, plan = callback.data.split("_")
+    user_id = int(user_id)
+
     days = 7 if plan=="7" else 30
     until = int(time.time()) + days * 86400
 
-    cursor.execute("UPDATE users SET access_until=? WHERE user_id=?", (until, callback.from_user.id))
+    cursor.execute("UPDATE users SET access_until=? WHERE user_id=?", (until, user_id))
     conn.commit()
 
-    await callback.message.answer("✅ Доступ открыт")
+    await bot.send_message(user_id, "✅ Доступ открыт")
+    await callback.message.edit_text("Готово")
 
 # ================= СТАТИСТИКА =================
 
 @dp.callback_query(F.data=="stats")
-async def stats(callback: CallbackQuery):
-    await callback.answer()
-
+async def stats(callback:CallbackQuery):
     p,f = get_stats(callback.from_user.id)
+    total = p+f
+    percent = int(p/total*100) if total else 0
 
-    cursor.execute("SELECT xp, streak FROM users WHERE user_id=?", (callback.from_user.id,))
-    xp, streak = cursor.fetchone()
-
-    await callback.message.answer(
-        f"📊 Сдал: {p}\n❌ Провал: {f}\n⭐ XP: {xp}\n🔥 Streak: {streak}"
-    )
+    await callback.message.answer(f"📊 Сдал: {p}\n❌ Провалил: {f}\n📈 {percent}%")
 
 @dp.callback_query(F.data=="top")
-async def top(callback: CallbackQuery):
-    await callback.answer()
-
-    cursor.execute("SELECT username, xp FROM users ORDER BY xp DESC LIMIT 5")
+async def top(callback:CallbackQuery):
+    cursor.execute("SELECT username, exams_passed FROM users ORDER BY exams_passed DESC LIMIT 5")
     rows = cursor.fetchall()
 
     text="🔥 ТОП:\n"
     for i,r in enumerate(rows,1):
-        text += f"{i}. {r[0]} — {r[1]} XP\n"
+        text += f"{i}. {r[0]} — {r[1]}\n"
 
     await callback.message.answer(text)
 
-# ================= МЕНЮ =================
+# ================= ДРУГОЕ =================
 
 @dp.callback_query(F.data=="menu")
-async def menu(callback: CallbackQuery, state:FSMContext):
-    await callback.answer()
+async def menu(callback:CallbackQuery, state:FSMContext):
     await state.clear()
     await callback.message.answer("Меню:", reply_markup=menu_kb())
 
 @dp.callback_query(F.data=="restart")
-async def restart(callback: CallbackQuery, state:FSMContext):
-    await callback.answer()
-    await training(callback, state)
+async def restart(callback:CallbackQuery, state:FSMContext):
+    data = await state.get_data()
+    qs = random.sample(questions, min(len(data.get("qs", questions)), 15))
+
+    await state.set_state(QuizState.data)
+    await state.update_data(qs=qs, index=0, score=0, mistakes=0, mode=data.get("mode","training"))
+
+    await send_question(callback.message, state)
 
 # ================= RUN =================
 
