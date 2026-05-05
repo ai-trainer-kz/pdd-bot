@@ -155,43 +155,29 @@ questions = [
 base_questions = questions
 
 def generate_ai_question():
-    templates = [
-        "Что должен сделать водитель?",
-        "Как правильно поступить?",
-        "Разрешено ли действие?",
-        "Кто имеет преимущество?",
-        "Что означает знак?",
-        "Какой сигнал разрешает движение?"
-    ]
+    # берём нормальный вопрос из базы
+    q = random.choice(questions)
 
-    situations = [
-        "на перекрестке",
-        "при повороте налево",
-        "при обгоне",
-        "в городе",
-        "на трассе",
-        "на пешеходном переходе"
-    ]
-
-    answers_pool = [
-        ["Уступить", "Продолжить движение", "Остановиться", "Сигналить"],
-        ["Можно", "Нельзя", "Только при разрешении", "По ситуации"],
-        ["Красный", "Желтый", "Зеленый", "Мигающий"],
-    ]
-
-    q = f"{random.choice(templates)} {random.choice(situations)}?"
-
-    options = random.choice(answers_pool)
-    correct = random.randint(0, len(options)-1)
-
-    return {
-        "q": q + f" ({random.randint(1000,9999)})",
-        "options": options,
-        "correct": correct,
-        "explanation": "Правильный ответ согласно ПДД",
-        "topic": q
+    # копируем
+    new_q = {
+        "q": q["q"],
+        "options": q["options"][:],
+        "correct": q["correct"],
+        "explanation": q.get("explanation", ""),
+        "topic": q.get("topic", q["q"])
     }
 
+    # перемешиваем ответы (как экзамен)
+    opts = new_q["options"]
+    correct_text = opts[new_q["correct"]]
+
+    random.shuffle(opts)
+
+    new_q["options"] = opts
+    new_q["correct"] = opts.index(correct_text)
+
+    return new_q
+    
 def get_weak_questions(user_id):
     cursor.execute("""
     SELECT topic FROM mistakes 
@@ -364,16 +350,19 @@ def result_kb():
     ])
 
 # ================= START =================
-
 @dp.message(Command("start"))
 async def start(message: Message, state: FSMContext):
-    cursor.execute("INSERT OR IGNORE INTO users VALUES (?, ?, 0, 0, 0)",
-                   (message.from_user.id, message.from_user.username))
+
+    cursor.execute("""
+    INSERT INTO users (user_id, username)
+    VALUES (?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET username=excluded.username
+    """, (message.from_user.id, message.from_user.username))
+
     conn.commit()
 
     await state.clear()
     await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
-
 
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
