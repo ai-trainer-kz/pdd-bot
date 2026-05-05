@@ -87,6 +87,12 @@ def answers_kb():
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")]
     ])
 
+def result_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Пройти ещё раз", callback_data="restart")],
+        [InlineKeyboardButton(text="⬅️ В меню", callback_data="back")]
+    ])
+
 def pay_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔥 7 дней — 5000₸", callback_data="buy_7")],
@@ -104,6 +110,19 @@ async def start(message: Message, state: FSMContext):
 
     await state.clear()
     await message.answer("Выбери режим:", reply_markup=menu_kb())
+
+# ---------------- ПОВТОР ----------------
+@dp.callback_query(F.data == "restart")
+async def restart(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(QuizState.data)
+    await state.update_data(
+        question_index=0,
+        score=0,
+        mistakes=0,
+        free_count=0,
+        mode="training"
+    )
+    await send_question(callback.message, state)
 
 # ---------------- РЕЖИМ ----------------
 
@@ -145,30 +164,30 @@ async def send_question(message: Message, state: FSMContext):
     index = data["question_index"]
 
     if data["mode"] == "training":
-        if data["free_count"] >= 4 and not has_access(message.chat.id):
-            await message.answer("🔒 Лимит закончился", reply_markup=pay_kb())
-            await state.clear()
-            return
-
-        q = questions[index % len(questions)]
-
+        text = f"🎉 Тренировка завершена!\nБаллы: {data['score']}"
+    
+        if not has_access(message.chat.id):
+            text += "\n\n🔒 Хочешь больше — открой полный доступ"
+    
+            await message.answer(text, reply_markup=pay_kb())
+        else:
+            await message.answer(text, reply_markup=result_kb())
+    
     else:
-        exam_qs = data["exam_questions"]
-
-        if index >= len(exam_qs):
-            # результат экзамена
-            if data["mistakes"] < 3:
-                cursor.execute("UPDATE users SET exams_passed = exams_passed + 1 WHERE user_id=?", (message.chat.id,))
-                conn.commit()
-                await message.answer(f"🎉 Экзамен сдан! Баллы: {data['score']}")
-            else:
-                cursor.execute("UPDATE users SET exams_failed = exams_failed + 1 WHERE user_id=?", (message.chat.id,))
-                conn.commit()
-                await message.answer("❌ Экзамен не сдан")
-
-            await state.clear()
-            return
-
+        # экзамен
+        if data["mistakes"] < 3:
+            cursor.execute("UPDATE users SET exams_passed = exams_passed + 1 WHERE user_id=?", (message.chat.id,))
+            conn.commit()
+            text = f"🎉 Экзамен СДАН!\nБаллы: {data['score']}"
+        else:
+            cursor.execute("UPDATE users SET exams_failed = exams_failed + 1 WHERE user_id=?", (message.chat.id,))
+            conn.commit()
+            text = "❌ Экзамен НЕ сдан"
+    
+        await message.answer(text, reply_markup=result_kb())
+    
+    await state.clear()
+    return
         q = exam_qs[index]
 
     text = f"{q['q']}\n\n"
