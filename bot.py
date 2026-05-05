@@ -158,37 +158,63 @@ async def exam(callback: CallbackQuery, state: FSMContext):
     await send_question(callback.message, state)
 
 # ---------------- ВОПРОС ----------------
-
 async def send_question(message: Message, state: FSMContext):
     data = await state.get_data()
     index = data["question_index"]
 
+    # ---------------- ЛИМИТ ТРЕНИРОВКИ ----------------
     if data["mode"] == "training":
-        text = f"🎉 Тренировка завершена!\nБаллы: {data['score']}"
-    
-        if not has_access(message.chat.id):
-            text += "\n\n🔒 Хочешь больше — открой полный доступ"
-    
-            await message.answer(text, reply_markup=pay_kb())
-        else:
-            await message.answer(text, reply_markup=result_kb())
-    
+        if data["free_count"] >= 5 and not has_access(message.chat.id):
+            await message.answer(
+                "🔒 Бесплатный лимит закончился",
+                reply_markup=pay_kb()
+            )
+            await state.clear()
+            return
+
+    # ---------------- ВЫБОР СПИСКА ----------------
+    if data["mode"] == "exam":
+        qs = exam_qs
     else:
-        # экзамен
-        if data["mistakes"] < 3:
-            cursor.execute("UPDATE users SET exams_passed = exams_passed + 1 WHERE user_id=?", (message.chat.id,))
-            conn.commit()
-            text = f"🎉 Экзамен СДАН!\nБаллы: {data['score']}"
+        qs = questions
+
+    # ---------------- КОНЕЦ ----------------
+    if index >= len(qs):
+
+        # --- ТРЕНИРОВКА ---
+        if data["mode"] == "training":
+            text = f"🎉 Тренировка завершена!\nБаллы: {data['score']}"
+
+            if not has_access(message.chat.id):
+                text += "\n\n🔒 Хочешь больше — открой полный доступ"
+                await message.answer(text, reply_markup=pay_kb())
+            else:
+                await message.answer(text, reply_markup=result_kb())
+
+        # --- ЭКЗАМЕН ---
         else:
-            cursor.execute("UPDATE users SET exams_failed = exams_failed + 1 WHERE user_id=?", (message.chat.id,))
-            conn.commit()
-            text = "❌ Экзамен НЕ сдан"
-    
-        await message.answer(text, reply_markup=result_kb())
-    
-    await state.clear()
-    return
-        q = exam_qs[index]
+            if data["mistakes"] < 3:
+                cursor.execute(
+                    "UPDATE users SET exams_passed = exams_passed + 1 WHERE user_id=?",
+                    (message.chat.id,)
+                )
+                conn.commit()
+                text = f"🎉 Экзамен СДАН!\nБаллы: {data['score']}"
+            else:
+                cursor.execute(
+                    "UPDATE users SET exams_failed = exams_failed + 1 WHERE user_id=?",
+                    (message.chat.id,)
+                )
+                conn.commit()
+                text = "❌ Экзамен НЕ сдан"
+
+            await message.answer(text, reply_markup=result_kb())
+
+        await state.clear()
+        return
+
+    # ---------------- ВОПРОС ----------------
+    q = qs[index]
 
     text = f"{q['q']}\n\n"
     for i, opt in enumerate(q["options"]):
