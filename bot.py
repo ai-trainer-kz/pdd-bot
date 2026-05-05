@@ -365,16 +365,19 @@ async def start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
 
-@dp.message(F.text == "/backup")
+@dp.message(F.text.contains("/backup"))
 async def backup(message: Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
+
+    import os
 
     if not os.path.exists(DB_PATH):
         await message.answer("❌ База не найдена")
         return
 
-    await message.answer_document(open(DB_PATH, "rb"))
+    with open(DB_PATH, "rb") as f:
+        await message.answer_document(f)
 
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
