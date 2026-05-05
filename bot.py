@@ -154,8 +154,7 @@ async def start(message: Message, state: FSMContext):
 async def training(callback: CallbackQuery, state: FSMContext):
     await state.set_state(QuizState.data)
 
-    qs = random.sample(questions, min(15, len(questions)))
-
+    qs = random.sample(questions * 3, 15)
     await state.update_data(
         qs=qs,
         index=0,
@@ -337,10 +336,10 @@ async def answer(callback:CallbackQuery, state:FSMContext):
 
     if user == q["correct"]:
         data["score"] += 1
-        await callback.message.answer("✅")
+        await callback.message.answer("✅ Верно")
     else:
         data["mistakes"] += 1
-        await callback.message.answer("❌")
+        await callback.message.answer("❌ Неверно")
 
         cursor.execute("""
         INSERT INTO mistakes (user_id, topic, count)
