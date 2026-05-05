@@ -365,7 +365,9 @@ async def start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
 
-@dp.message(F.text.contains("/backup"))
+from aiogram.filters import Command
+
+@dp.message(Command("backup"))
 async def backup(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return
@@ -373,7 +375,7 @@ async def backup(message: Message):
     import os
 
     if not os.path.exists(DB_PATH):
-        await message.answer("❌ База не найдена")
+        await message.answer(f"❌ База не найдена: {DB_PATH}")
         return
 
     with open(DB_PATH, "rb") as f:
