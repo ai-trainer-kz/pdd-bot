@@ -11,15 +11,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
 TOKEN = os.getenv("TOKEN")
-ADMIN_IDS = [503301815, 8398266271]
+ADMIN_ID = 503301815
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
 # ================= БАЗА =================
 
-DB_PATH = "db.sqlite3"
-
-conn = sqlite3.connect(DB_PATH)
+conn = sqlite3.connect("db.sqlite3")
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -364,22 +363,6 @@ async def start(message: Message, state: FSMContext):
 
     await state.clear()
     await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
-
-from aiogram.filters import Command
-
-@dp.message(Command("backup"))
-async def backup(message: Message):
-    if message.from_user.id not in ADMIN_IDS:
-        return
-
-    import os
-
-    if not os.path.exists(DB_PATH):
-        await message.answer(f"❌ База не найдена: {DB_PATH}")
-        return
-
-    with open(DB_PATH, "rb") as f:
-        await message.answer_document(f)
 
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
