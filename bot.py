@@ -19,10 +19,6 @@ def load_users():
             return json.load(f)
     return {}
 
-def save_users(users):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
-
 users = load_users()
 
 TOKEN = os.getenv("TOKEN")
@@ -390,12 +386,14 @@ async def admin_panel(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
 
-    total_users = len(users)
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
 
-    paid_users = sum(
-        1 for user in users.values()
-        if user.get("paid")
+    cursor.execute(
+        "SELECT COUNT(*) FROM users WHERE access_until > ?",
+        (int(time.time()),)
     )
+    paid_users = cursor.fetchone()[0]
 
     text = (
         f"👥 Пользователей: {total_users}\n"
@@ -557,8 +555,6 @@ async def paid(callback: CallbackQuery, state:FSMContext):
     data = await state.get_data()
     plan = data.get("plan")
 
-    save_users(users)
-
     if not plan:
         await callback.message.answer("Сначала выбери тариф")
         return
@@ -583,12 +579,6 @@ async def approve(callback:CallbackQuery):
 
     cursor.execute("UPDATE users SET access_until=? WHERE user_id=?", (until, user_id))
     conn.commit()
-
-    users[str(user_id)] = {
-        "paid": True
-    }
-    
-    save_users(users)
 
     await bot.send_message(user_id, "✅ Доступ открыт", reply_markup=menu_kb())
     await callback.message.edit_text("Готово")
