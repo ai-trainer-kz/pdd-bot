@@ -18,9 +18,12 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # ================= БАЗА =================
+DB_PATH = "db.sqlite3"
 
-conn = sqlite3.connect("db.sqlite3")
-cursor = conn.cursor()
+if not os.path.exists(DB_PATH):
+    open(DB_PATH, "a").close()
+
+conn = sqlite3.connect(DB_PATH)
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
