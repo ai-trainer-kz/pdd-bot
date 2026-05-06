@@ -24,6 +24,7 @@ if not os.path.exists(DB_PATH):
     open(DB_PATH, "a").close()
 
 conn = sqlite3.connect(DB_PATH)
+cursor = conn.cursor()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
