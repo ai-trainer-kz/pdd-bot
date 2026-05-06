@@ -11,16 +11,6 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-USERS_FILE = "users.json"
-
-def load_users():
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-users = load_users()
-
 TOKEN = os.getenv("TOKEN")
 ADMIN_ID = 503301815
 
@@ -316,20 +306,26 @@ class QuizState(StatesGroup):
 
 # ================= UTILS =================
 def has_access(user_id):
-    user_id = str(user_id)
-
-    if user_id in users:
-        return users[user_id].get("paid", False)
 
     cursor.execute(
         "SELECT access_until FROM users WHERE user_id=?",
-        (int(user_id),)
+        (user_id,)
     )
 
     row = cursor.fetchone()
 
     return row and row[0] > int(time.time())
 
+def get_stats(user_id):
+
+    cursor.execute(
+        "SELECT exams_passed, exams_failed FROM users WHERE user_id=?",
+        (user_id,)
+    )
+
+    row = cursor.fetchone()
+
+    return row if row else (0, 0)
 # ================= КНОПКИ =================
 
 def menu_kb():
@@ -386,13 +382,16 @@ async def admin_panel(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
 
-    cursor.execute("SELECT COUNT(*) FROM users")
-    total_users = cursor.fetchone()[0]
+    cursor.execute(
+        "SELECT access_until FROM users WHERE user_id=?",
+        (user_id,)
+    )
 
     cursor.execute(
-        "SELECT COUNT(*) FROM users WHERE access_until > ?",
-        (int(time.time()),)
+        "SELECT exams_passed, exams_failed FROM users WHERE user_id=?",
+        (user_id,)
     )
+    
     paid_users = cursor.fetchone()[0]
 
     text = (
@@ -447,13 +446,16 @@ async def send_question(message: Message, state: FSMContext):
     # 🔥 анти-дубликаты
     while i < len(qs) and qs[i]["q"] in used:
         i += 1
-
-    # ❗ ОБНОВЛЯЕМ ЛОКАЛЬНО И В STATE
-    if i < len(qs):
-        used.append(qs[i]["q"])
-        i += 1
+    # ❗ текущий вопрос
+    q = qs[i]
     
-    await state.update_data(used=used, index=i)
+    used.append(q["q"])
+    
+    await state.update_data(
+        used=used,
+        index=i
+    )
+   
 
     # 🔥 конец
     if i >= len(qs):
@@ -483,9 +485,6 @@ async def send_question(message: Message, state: FSMContext):
 
         await state.clear()
         return
-
-    # ❗ используем ОБНОВЛЕННЫЙ i
-    q = qs[i]
 
     text = f"{q['q']}\n\n"
     for idx, opt in enumerate(q["options"]):
