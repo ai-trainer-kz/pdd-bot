@@ -10,6 +10,20 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
+USERS_FILE = "users.json"
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_users(users):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
+
+users = load_users()
+
 TOKEN = os.getenv("TOKEN")
 ADMIN_ID = 503301815
 
@@ -512,9 +526,16 @@ async def buy(callback:CallbackQuery, state:FSMContext):
     await callback.message.answer("Kaspi: 4400430352720152\nПосле оплаты нажми кнопку ниже")
 
 @dp.callback_query(F.data=="paid")
-async def paid(callback:CallbackQuery, state:FSMContext):
+async def paid(callback: CallbackQuery, state:FSMContext):
     data = await state.get_data()
     plan = data.get("plan")
+
+    users[str(callback.from_user.id)] = {
+        "paid": True,
+        "plan": plan
+    }
+
+    save_users(users)
 
     if not plan:
         await callback.message.answer("Сначала выбери тариф")
