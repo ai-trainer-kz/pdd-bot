@@ -382,7 +382,7 @@ async def start(message: Message, state: FSMContext):
 @dp.message(Command("admin"))
 async def admin_panel(message: Message):
 
-    if message.from_user.id != ADMIN_ID: 503301815
+    if message.from_user.id != ADMIN_ID:
         return
 
     total_users = len(users)
