@@ -551,11 +551,6 @@ async def paid(callback: CallbackQuery, state:FSMContext):
     data = await state.get_data()
     plan = data.get("plan")
 
-    users[str(callback.from_user.id)] = {
-        "paid": True,
-        "plan": plan
-    }
-
     save_users(users)
 
     if not plan:
@@ -582,6 +577,12 @@ async def approve(callback:CallbackQuery):
 
     cursor.execute("UPDATE users SET access_until=? WHERE user_id=?", (until, user_id))
     conn.commit()
+
+    users[str(user_id)] = {
+        "paid": True
+    }
+    
+    save_users(users)
 
     await bot.send_message(user_id, "✅ Доступ открыт", reply_markup=menu_kb())
     await callback.message.edit_text("Готово")
