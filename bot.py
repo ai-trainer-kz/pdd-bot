@@ -319,15 +319,20 @@ class QuizState(StatesGroup):
     data = State()
 
 # ================= UTILS =================
-
 def has_access(user_id):
-    cursor.execute("SELECT access_until FROM users WHERE user_id=?", (user_id,))
-    row = cursor.fetchone()
-    return row and row[0] > int(time.time())
+    user_id = str(user_id)
 
-def get_stats(user_id):
-    cursor.execute("SELECT exams_passed, exams_failed FROM users WHERE user_id=?", (user_id,))
-    return cursor.fetchone() or (0,0)
+    if user_id in users:
+        return users[user_id].get("paid", False)
+
+    cursor.execute(
+        "SELECT access_until FROM users WHERE user_id=?",
+        (int(user_id),)
+    )
+
+    row = cursor.fetchone()
+
+    return row and row[0] > int(time.time())
 
 # ================= КНОПКИ =================
 
@@ -448,6 +453,7 @@ async def send_question(message: Message, state: FSMContext):
     # ❗ ОБНОВЛЯЕМ ЛОКАЛЬНО И В STATE
     if i < len(qs):
         used.append(qs[i]["q"])
+        i += 1
     
     await state.update_data(used=used, index=i)
 
