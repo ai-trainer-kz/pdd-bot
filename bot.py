@@ -382,16 +382,15 @@ async def admin_panel(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
 
-    cursor.execute(
-        "SELECT access_until FROM users WHERE user_id=?",
-        (user_id,)
-    )
+    # сколько всего пользователей
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
 
+    # сколько оплатили
     cursor.execute(
-        "SELECT exams_passed, exams_failed FROM users WHERE user_id=?",
-        (user_id,)
+        "SELECT COUNT(*) FROM users WHERE access_until > ?",
+        (int(time.time()),)
     )
-    
     paid_users = cursor.fetchone()[0]
 
     text = (
@@ -400,7 +399,6 @@ async def admin_panel(message: Message):
     )
 
     await message.answer(text)
-
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
     if not has_access(callback.from_user.id):
