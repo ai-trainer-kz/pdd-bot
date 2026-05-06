@@ -18,7 +18,8 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # ================= БАЗА =================
-DB_PATH = "db.sqlite3"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "db.sqlite3")
 
 if not os.path.exists(DB_PATH):
     open(DB_PATH, "a").close()
@@ -578,7 +579,12 @@ async def approve(callback:CallbackQuery):
     days = 7 if plan=="7" else 30
     until = int(time.time()) + days * 86400
 
-    cursor.execute("UPDATE users SET access_until=? WHERE user_id=?", (until, user_id))
+    cursor.execute("""
+    INSERT INTO users (user_id, access_until)
+    VALUES (?, ?)
+    ON CONFLICT(user_id)
+    DO UPDATE SET access_until=excluded.access_until
+    """, (user_id, until))
     conn.commit()
 
     await bot.send_message(user_id, "✅ Доступ открыт", reply_markup=menu_kb())
