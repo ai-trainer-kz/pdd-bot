@@ -11,20 +11,6 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-USERS_FILE = "users.json"
-
-def load_users():
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-def save_users(users):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
-
-users = load_users()
-
 TOKEN = os.getenv("TOKEN")
 ADMIN_ID = 503301815
 
@@ -319,16 +305,27 @@ class QuizState(StatesGroup):
     data = State()
 
 # ================= UTILS =================
-
 def has_access(user_id):
-    cursor.execute("SELECT access_until FROM users WHERE user_id=?", (user_id,))
+
+    cursor.execute(
+        "SELECT access_until FROM users WHERE user_id=?",
+        (user_id,)
+    )
+
     row = cursor.fetchone()
+
     return row and row[0] > int(time.time())
 
 def get_stats(user_id):
-    cursor.execute("SELECT exams_passed, exams_failed FROM users WHERE user_id=?", (user_id,))
-    return cursor.fetchone() or (0,0)
 
+    cursor.execute(
+        "SELECT exams_passed, exams_failed FROM users WHERE user_id=?",
+        (user_id,)
+    )
+
+    row = cursor.fetchone()
+
+    return row if row else (0, 0)
 # ================= КНОПКИ =================
 
 def menu_kb():
@@ -379,6 +376,29 @@ async def start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
 
+@dp.message(Command("admin"))
+async def admin_panel(message: Message):
+
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    # сколько всего пользователей
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
+
+    # сколько оплатили
+    cursor.execute(
+        "SELECT COUNT(*) FROM users WHERE access_until > ?",
+        (int(time.time()),)
+    )
+    paid_users = cursor.fetchone()[0]
+
+    text = (
+        f"👥 Пользователей: {total_users}\n"
+        f"💰 Оплатили: {paid_users}"
+    )
+
+    await message.answer(text)
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
     if not has_access(callback.from_user.id):
@@ -424,12 +444,16 @@ async def send_question(message: Message, state: FSMContext):
     # 🔥 анти-дубликаты
     while i < len(qs) and qs[i]["q"] in used:
         i += 1
-
-    # ❗ ОБНОВЛЯЕМ ЛОКАЛЬНО И В STATE
-    if i < len(qs):
-        used.append(qs[i]["q"])
+    # ❗ текущий вопрос
+    q = qs[i]
     
-    await state.update_data(used=used, index=i)
+    used.append(q["q"])
+    
+    await state.update_data(
+        used=used,
+        index=i
+    )
+   
 
     # 🔥 конец
     if i >= len(qs):
@@ -459,9 +483,6 @@ async def send_question(message: Message, state: FSMContext):
 
         await state.clear()
         return
-
-    # ❗ используем ОБНОВЛЕННЫЙ i
-    q = qs[i]
 
     text = f"{q['q']}\n\n"
     for idx, opt in enumerate(q["options"]):
@@ -530,13 +551,6 @@ async def buy(callback:CallbackQuery, state:FSMContext):
 async def paid(callback: CallbackQuery, state:FSMContext):
     data = await state.get_data()
     plan = data.get("plan")
-
-    users[str(callback.from_user.id)] = {
-        "paid": True,
-        "plan": plan
-    }
-
-    save_users(users)
 
     if not plan:
         await callback.message.answer("Сначала выбери тариф")
