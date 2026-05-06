@@ -379,6 +379,26 @@ async def start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
 
+@dp.message(Command("admin"))
+async def admin_panel(message: Message):
+
+    if message.from_user.id != ADMIN_ID: 503301815
+        return
+
+    total_users = len(users)
+
+    paid_users = sum(
+        1 for user in users.values()
+        if user.get("paid")
+    )
+
+    text = (
+        f"👥 Пользователей: {total_users}\n"
+        f"💰 Оплатили: {paid_users}"
+    )
+
+    await message.answer(text)
+
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
     if not has_access(callback.from_user.id):
