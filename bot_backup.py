@@ -1,4 +1,4 @@
-import json
+import json 
 import os
 import random
 import asyncio
@@ -18,8 +18,12 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # ================= БАЗА =================
+DB_PATH = "db.sqlite3"
 
-conn = sqlite3.connect("db.sqlite3")
+if not os.path.exists(DB_PATH):
+    open(DB_PATH, "a").close()
+
+conn = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
 cursor.execute("""
