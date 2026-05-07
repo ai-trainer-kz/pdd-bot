@@ -310,7 +310,7 @@ class QuizState(StatesGroup):
 def has_access(user_id):
 
     cursor.execute(
-        "SELECT access_until FROM users WHERE user_id=%s,
+        "SELECT exams_passed, exams_failed FROM users WHERE user_id=%s",
         (user_id,)
     )
 
