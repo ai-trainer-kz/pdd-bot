@@ -1,8 +1,8 @@
 import json 
 import os
 import random
-import asyncio 
-import psycopg2
+import asyncio
+import sqlite3
 import time 
 
 from aiogram import Bot, Dispatcher, F
@@ -18,10 +18,12 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # ================= БАЗА =================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATABASE_URL = os.getenv("DATABASE_URL")
+DB_PATH = "db.sqlite3"
 
-conn = psycopg2.connect(DATABASE_URL)
+if not os.path.exists(DB_PATH):
+    open(DB_PATH, "a").close()
+
+conn = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -184,7 +186,7 @@ def generate_ai_question():
 def get_weak_questions(user_id):
     cursor.execute("""
     SELECT topic FROM mistakes 
-    WHERE user_id=%s
+    WHERE user_id=? 
     ORDER BY count DESC LIMIT 5
     """, (user_id,))
 
@@ -288,7 +290,7 @@ async def gai(callback: CallbackQuery, state: FSMContext):
             qs.append(q)
             used_q.add(q["q"])
 
-    await state.set_state(QuizState.data) 
+    await state.set_state(QuizState.data)
 
     await state.update_data(
         qs=qs,
@@ -310,7 +312,7 @@ class QuizState(StatesGroup):
 def has_access(user_id):
 
     cursor.execute(
-        "SELECT exams_passed, exams_failed FROM users WHERE user_id=%s",
+        "SELECT access_until FROM users WHERE user_id=?",
         (user_id,)
     )
 
@@ -321,7 +323,7 @@ def has_access(user_id):
 def get_stats(user_id):
 
     cursor.execute(
-        "SELECT exams_passed, exams_failed FROM users WHERE user_id=%s",
+        "SELECT exams_passed, exams_failed FROM users WHERE user_id=?",
         (user_id,)
     )
 
@@ -353,8 +355,6 @@ def answers_kb():
 def pay_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 7 дней — 5000₸", callback_data="buy_7")],
-
-        
         [InlineKeyboardButton(text="💳 30 дней — 10000₸", callback_data="buy_30")],
         [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")]
     ])
@@ -371,7 +371,7 @@ async def start(message: Message, state: FSMContext):
 
     cursor.execute("""
     INSERT INTO users (user_id, username)
-    VALUES (%s, %s)
+    VALUES (?, ?)
     ON CONFLICT(user_id) DO UPDATE SET username=excluded.username
     """, (message.from_user.id, message.from_user.username))
 
@@ -392,7 +392,7 @@ async def admin_panel(message: Message):
 
     # сколько оплатили
     cursor.execute(
-        "SELECT COUNT(*) FROM users WHERE access_until > %s",
+        "SELECT COUNT(*) FROM users WHERE access_until > ?",
         (int(time.time()),)
     )
     paid_users = cursor.fetchone()[0]
@@ -440,6 +440,7 @@ async def exam(callback: CallbackQuery, state: FSMContext):
 # ================= ВОПРОС =================
 async def send_question(message: Message, state: FSMContext):
     data = await state.get_data()
+
     qs = data["qs"]
     i = data["index"]
 
@@ -448,38 +449,39 @@ async def send_question(message: Message, state: FSMContext):
     # 🔥 анти-дубликаты
     while i < len(qs) and qs[i]["q"] in used:
         i += 1
-    # ❗ текущий вопрос
-    q = qs[i]
-    
-    used.append(q["q"])
-    
-    await state.update_data(
-        used=used,
-        index=i
-    )
-   
 
-    # 🔥 конец
+    # 🔥 конец вопросов
     if i >= len(qs):
 
         if data["mode"] in ["exam", "gai"]:
+
             if data["mistakes"] < 3:
+
                 cursor.execute(
-                    "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=%s",
+                    "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=?",
                     (message.chat.id,)
                 )
+
                 text = "🎉 СДАН"
+
             else:
+
                 cursor.execute(
-                    "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s",
+                    "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=?",
                     (message.chat.id,)
                 )
+
                 text = "❌ НЕ СДАН"
 
             conn.commit()
-            await message.answer(text, reply_markup=result_kb())
+
+            await message.answer(
+                text,
+                reply_markup=result_kb()
+            )
 
         else:
+
             await message.answer(
                 f"🎉 Конец! Баллы: {data['score']}",
                 reply_markup=result_kb()
@@ -488,12 +490,25 @@ async def send_question(message: Message, state: FSMContext):
         await state.clear()
         return
 
+    # ❗ текущий вопрос
+    q = qs[i]
+
+    used.append(q["q"])
+
+    await state.update_data(
+        used=used,
+        index=i
+    )
+
     text = f"{q['q']}\n\n"
+
     for idx, opt in enumerate(q["options"]):
         text += f"{chr(65+idx)}) {opt}\n"
 
-    await message.answer(text, reply_markup=answers_kb())
-
+    await message.answer(
+        text,
+        reply_markup=answers_kb()
+    )
 # ================= ОТВЕТ =================
 
 @dp.callback_query(F.data.startswith("ans_"))
@@ -514,14 +529,14 @@ async def answer(callback:CallbackQuery, state:FSMContext):
 
         cursor.execute("""
         INSERT INTO mistakes (user_id, topic, count)
-        VALUES (%s, %s, 1)
+        VALUES (?, ?, 1)
         ON CONFLICT(user_id, topic)
         DO UPDATE SET count = count + 1
         """, (callback.from_user.id, q.get("topic", q["q"])))
         conn.commit()
 
     if data["mode"] in ["exam", "gai"] and data["mistakes"] >= 3:
-        cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s", (callback.from_user.id,))
+        cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=?", (callback.from_user.id,))
         conn.commit()
 
         await callback.message.answer("❌ Провал", reply_markup=result_kb())
@@ -578,12 +593,7 @@ async def approve(callback:CallbackQuery):
     days = 7 if plan=="7" else 30
     until = int(time.time()) + days * 86400
 
-    cursor.execute("""
-    INSERT INTO users (user_id, access_until)
-    VALUES (%s, %s)
-    ON CONFLICT(user_id)
-    DO UPDATE SET access_until=excluded.access_until
-    """, (user_id, until))
+    cursor.execute("UPDATE users SET access_until=? WHERE user_id=?", (until, user_id))
     conn.commit()
 
     await bot.send_message(user_id, "✅ Доступ открыт", reply_markup=menu_kb())
