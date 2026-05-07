@@ -21,7 +21,9 @@ dp = Dispatcher()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-conn = psycopg2.connect(DATABASE_URL)
+print(DATABASE_URL)
+
+conn = psycopg2.connect(DATABASE_URL, sslmode="require")
 cursor = conn.cursor()
 
 cursor.execute("""
