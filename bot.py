@@ -369,9 +369,8 @@ async def start(message: Message, state: FSMContext):
         "SELECT COUNT(*) FROM users WHERE user_id=%s",
         (message.from_user.id,)
     )
-
+    
     exists = cursor.fetchone()[0]
-
     if exists == 0:
         cursor.execute(
             """
