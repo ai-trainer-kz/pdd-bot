@@ -308,7 +308,7 @@ class QuizState(StatesGroup):
 def has_access(user_id):
 
     cursor.execute(
-        "SELECT access_until FROM users WHERE user_id=?",
+        "SELECT access_until FROM users WHERE user_id=%s",
         (user_id,)
     )
 
@@ -319,7 +319,7 @@ def has_access(user_id):
 def get_stats(user_id):
 
     cursor.execute(
-        "SELECT exams_passed, exams_failed FROM users WHERE user_id=?",
+        "SELECT exams_passed, exams_failed FROM users WHERE user_id=%s",
         (user_id,)
     )
 
@@ -359,14 +359,14 @@ def result_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔁 Пройти ещё раз", callback_data="restart")],
         [InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")]
-    ])
+    ]
 
 # ================= START =================
 @dp.message(Command("start"))
 async def start(message: Message, state: FSMContext):
 
     cursor.execute(
-        "SELECT COUNT(*) FROM users WHERE user_id=?",
+        "SELECT COUNT(*) FROM users WHERE user_id=%s",
         (message.from_user.id,)
     )
 
@@ -377,7 +377,7 @@ async def start(message: Message, state: FSMContext):
             """
             INSERT INTO users
             (user_id, username, access_until, exams_passed, exams_failed)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
             """,
             (
                 message.from_user.id,
@@ -409,7 +409,7 @@ async def admin_panel(message: Message):
 
     # сколько оплатили
     cursor.execute(
-        "SELECT COUNT(*) FROM users WHERE access_until > ?",
+        "SELECT COUNT(*) FROM users WHERE access_until > %s",
         (int(time.time()),)
     )
     paid_users = cursor.fetchone()[0]
@@ -475,7 +475,7 @@ async def send_question(message: Message, state: FSMContext):
             if data["mistakes"] < 3:
 
                 cursor.execute(
-                    "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=?",
+                    "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=%s",
                     (message.chat.id,)
                 )
 
@@ -484,7 +484,7 @@ async def send_question(message: Message, state: FSMContext):
             else:
 
                 cursor.execute(
-                    "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=?",
+                    "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s",
                     (message.chat.id,)
                 )
 
@@ -553,7 +553,7 @@ async def answer(callback:CallbackQuery, state:FSMContext):
         conn.commit()
 
     if data["mode"] in ["exam", "gai"] and data["mistakes"] >= 3:
-        cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=?", (callback.from_user.id,))
+        cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s", (callback.from_user.id,))
         conn.commit()
 
         await callback.message.answer("❌ Провал", reply_markup=result_kb())
@@ -610,7 +610,7 @@ async def approve(callback:CallbackQuery):
     days = 7 if plan=="7" else 30
     until = int(time.time()) + days * 86400
 
-    cursor.execute("UPDATE users SET access_until=? WHERE user_id=?", (until, user_id))
+    cursor.execute("UPDATE users SET access_until=%s WHERE user_id=%s", (until, user_id))
     conn.commit()
 
     await bot.send_message(user_id, "✅ Доступ открыт", reply_markup=menu_kb())
