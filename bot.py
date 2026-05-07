@@ -453,32 +453,34 @@ async def send_question(message: Message, state: FSMContext):
     while i < len(qs) and qs[i]["q"] in used:
         i += 1
     # 🔥 конец
-if i >= len(qs):
 
-    if data["mode"] in ["exam", "gai"]:
-        if data["mistakes"] < 3:
-            cursor.execute(
-                "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=%s",
-                (message.chat.id,)
+    if i >= len(qs):
+
+        if data["mode"] in ["exam", "gai"]:
+
+            if data["mistakes"] < 3:
+                cursor.execute(
+                    "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=%s",
+                    (message.chat.id,)
+                )
+                text = "🎉 СДАН"
+
+            else:
+                cursor.execute(
+                    "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s",
+                    (message.chat.id,)
+                )
+                text = "❌ НЕ СДАН"
+
+            conn.commit()
+
+            await message.answer(
+                text,
+                reply_markup=result_kb()
             )
-            text = "🎉 СДАН"
 
-        else:
-            cursor.execute(
-                "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s",
-                (message.chat.id,)
-            )
-            text = "❌ НЕ СДАН"
-
-        conn.commit()
-
-        await message.answer(
-            text,
-            reply_markup=result_kb()
-        )
-
-        await state.clear()
-        return
+            await state.clear()
+            return
 
     # ❗ текущий вопрос
     q = qs[i]
