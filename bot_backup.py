@@ -321,7 +321,7 @@ def has_access(user_id):
 def get_stats(user_id):
 
     cursor.execute(
-        "SELECT exams_passed, exams_failed FROM users WHERE user_id=%s,
+        "SELECT exams_passed, exams_failed FROM users WHERE user_id=%s",
         (user_id,)
     )
 
