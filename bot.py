@@ -385,7 +385,7 @@ async def start(message: Message, state: FSMContext):
                 0,
                 0,
                 0
-            )
+            ) 
         )
 
         conn.commit()
