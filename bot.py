@@ -24,7 +24,7 @@ dp = Dispatcher()
 # ================= БАЗА =================
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
+    user_id BIGINT PRIMARY KEY,
     username TEXT,
     access_until INTEGER DEFAULT 0,
     exams_passed INTEGER DEFAULT 0,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS mistakes (
-    user_id INTEGER,
+    user_id BIGINT,
     topic TEXT,
     count INTEGER DEFAULT 1,
     PRIMARY KEY (user_id, topic)
@@ -545,11 +545,11 @@ async def answer(callback:CallbackQuery, state:FSMContext):
         await callback.message.answer("❌ Неверно")
 
         cursor.execute("""
-        INSERT INTO mistakes (user_id, topic, count)
-        VALUES (?, ?, 1)
-        ON CONFLICT(user_id, topic)
-        DO UPDATE SET count = count + 1
-        """, (callback.from_user.id, q.get("topic", q["q"])))
+            INSERT INTO mistakes (user_id, topic, count)
+            VALUES (%s, %s, 1)
+            ON CONFLICT (user_id, topic)
+            DO UPDATE SET count = mistakes.count + 1
+         """, (callback.from_user.id, q.get("topic", q["q"])))
         conn.commit()
 
     if data["mode"] in ["exam", "gai"] and data["mistakes"] >= 3:
