@@ -237,7 +237,7 @@ async def training(callback: CallbackQuery, state: FSMContext):
 
     await state.set_state(QuizState.data)
 
-    qs = random.sample(questions * 2, 20)
+    qs = random.sample(questions * 5, min(20, len(questions * 5)))
     await state.update_data(
         qs=qs,
         index=0,
@@ -452,52 +452,44 @@ async def send_question(message: Message, state: FSMContext):
     # 🔥 анти-дубликаты
     while i < len(qs) and qs[i]["q"] in used:
         i += 1
-    # ❗ текущий вопрос
-    q = qs[i]
-    
-    used.append(q["q"])
-    
-    await state.update_data(
-        used=used,
-        index=i
-    )
-   
-
     # 🔥 конец
-    if i >= len(qs):
+if i >= len(qs):
 
-        if data["mode"] in ["exam", "gai"]:
-            if data["mistakes"] < 3:
-                cursor.execute(
-                    "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=%s",
-                    (message.chat.id,)
-                )
-                text = "🎉 СДАН"
-            else:
-                cursor.execute(
-                    "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s",
-                    (message.chat.id,)
-                )
-                text = "❌ НЕ СДАН"
-
-            conn.commit()
-            await message.answer(text, reply_markup=result_kb())
-
-        else:
-            await message.answer(
-                f"🎉 Конец! Баллы: {data['score']}",
-                reply_markup=result_kb()
+    if data["mode"] in ["exam", "gai"]:
+        if data["mistakes"] < 3:
+            cursor.execute(
+                "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=%s",
+                (message.chat.id,)
             )
+            text = "🎉 СДАН"
+        else:
+            cursor.execute(
+                "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s",
+                (message.chat.id,)
+            )
+            text = "❌ НЕ СДАН"
 
-        await state.clear()
-        return
+        conn.commit()
+        await message.answer(text, reply_markup=result_kb())
 
-    text = f"{q['q']}\n\n"
-    for idx, opt in enumerate(q["options"]):
-        text += f"{chr(65+idx)}) {opt}\n"
+    else:
+        await message.answer(
+            f"🎉 Конец! Баллы: {data['score']}",
+            reply_markup=result_kb()
+        )
 
-    await message.answer(text, reply_markup=answers_kb())
+    await state.clear()
+    return
 
+# ❗ текущий вопрос
+q = qs[i]
+
+used.append(q["q"])
+
+await state.update_data(
+    used=used,
+    index=i
+)
 # ================= ОТВЕТ =================
 
 @dp.callback_query(F.data.startswith("ans_"))
