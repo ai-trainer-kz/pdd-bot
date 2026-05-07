@@ -55,6 +55,10 @@ ALTER COLUMN user_id TYPE BIGINT
 
 conn.commit()
 
+cursor.execute("DELETE FROM users")
+cursor.execute("DELETE FROM mistakes")
+conn.commit()
+
 # ================= ВОПРОСЫ =================
 questions = [
 
