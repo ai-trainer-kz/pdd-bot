@@ -17,6 +17,7 @@ ADMIN_ID = 503301815
 import psycopg2
 
 conn = psycopg2.connect(DATABASE_URL)
+conn.autocommit = True
 cursor = conn.cursor()
 
 bot = Bot(token=TOKEN)
