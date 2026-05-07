@@ -462,32 +462,32 @@ if i >= len(qs):
                 (message.chat.id,)
             )
             text = "🎉 СДАН"
-    
+
         else:
             cursor.execute(
                 "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s",
                 (message.chat.id,)
             )
             text = "❌ НЕ СДАН"
-    
+
         conn.commit()
-        
+
         await message.answer(
             text,
             reply_markup=result_kb()
         )
-        
+
         await state.clear()
         return
-        
+
     # ❗ текущий вопрос
     q = qs[i]
-    
+
     used.append(q["q"])
-    
+
     await state.update_data(
-    used=used,
-    index=i
+        used=used,
+        index=i
     )
 # ================= ОТВЕТ =================
 
