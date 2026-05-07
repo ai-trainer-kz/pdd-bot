@@ -2,7 +2,6 @@ import json
 import os
 import random
 import asyncio
-import sqlite3
 import time 
 
 from aiogram import Bot, Dispatcher, F
@@ -12,23 +11,21 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
 TOKEN = os.getenv("TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
 ADMIN_ID = 503301815
+
+import psycopg2
+
+conn = psycopg2.connect(DATABASE_URL)
+conn.autocommit = True
+cursor = conn.cursor()
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
 # ================= БАЗА =================
-DB_PATH = "db.sqlite3"
-
-if not os.path.exists(DB_PATH):
-    open(DB_PATH, "a").close()
-
-conn = sqlite3.connect(DB_PATH)
-cursor = conn.cursor()
-
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
+    user_id BIGINT PRIMARY KEY,
     username TEXT,
     access_until INTEGER DEFAULT 0,
     exams_passed INTEGER DEFAULT 0,
@@ -38,7 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS mistakes (
-    user_id INTEGER,
+    user_id BIGINT,
     topic TEXT,
     count INTEGER DEFAULT 1,
     PRIMARY KEY (user_id, topic)
@@ -47,6 +44,17 @@ CREATE TABLE IF NOT EXISTS mistakes (
 
 conn.commit()
 
+cursor.execute("""
+ALTER TABLE users
+ALTER COLUMN user_id TYPE BIGINT
+""")
+
+cursor.execute("""
+ALTER TABLE mistakes
+ALTER COLUMN user_id TYPE BIGINT
+""")
+
+conn.commit()
 # ================= ВОПРОСЫ =================
 questions = [
 
@@ -186,7 +194,7 @@ def generate_ai_question():
 def get_weak_questions(user_id):
     cursor.execute("""
     SELECT topic FROM mistakes 
-    WHERE user_id=%s 
+    WHERE user_id=? 
     ORDER BY count DESC LIMIT 5
     """, (user_id,))
 
@@ -373,9 +381,8 @@ async def start(message: Message, state: FSMContext):
         "SELECT COUNT(*) FROM users WHERE user_id=%s",
         (message.from_user.id,)
     )
-
+    
     exists = cursor.fetchone()[0]
-
     if exists == 0:
         cursor.execute(
             """
@@ -389,7 +396,7 @@ async def start(message: Message, state: FSMContext):
                 0,
                 0,
                 0
-            )
+            ) 
         )
 
         conn.commit()
@@ -549,11 +556,11 @@ async def answer(callback:CallbackQuery, state:FSMContext):
         await callback.message.answer("❌ Неверно")
 
         cursor.execute("""
-        INSERT INTO mistakes (user_id, topic, count)
-        VALUES (%s, %s, 1)
-        ON CONFLICT(user_id, topic)
-        DO UPDATE SET count = count + 1
-        """, (callback.from_user.id, q.get("topic", q["q"])))
+            INSERT INTO mistakes (user_id, topic, count)
+            VALUES (%s, %s, 1)
+            ON CONFLICT (user_id, topic)
+            DO UPDATE SET count = mistakes.count + 1
+         """, (callback.from_user.id, q.get("topic", q["q"])))
         conn.commit()
 
     if data["mode"] in ["exam", "gai"] and data["mistakes"] >= 3:
