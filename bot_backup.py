@@ -353,6 +353,8 @@ def answers_kb():
 def pay_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 7 дней — 5000₸", callback_data="buy_7")],
+
+        
         [InlineKeyboardButton(text="💳 30 дней — 10000₸", callback_data="buy_30")],
         [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")]
     ])
@@ -390,7 +392,7 @@ async def admin_panel(message: Message):
 
     # сколько оплатили
     cursor.execute(
-        "SELECT COUNT(*) FROM users WHERE access_until > %s,
+        "SELECT COUNT(*) FROM users WHERE access_until > %s",
         (int(time.time()),)
     )
     paid_users = cursor.fetchone()[0]
@@ -463,13 +465,13 @@ async def send_question(message: Message, state: FSMContext):
         if data["mode"] in ["exam", "gai"]:
             if data["mistakes"] < 3:
                 cursor.execute(
-                    "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=%s,
+                    "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=%s",
                     (message.chat.id,)
                 )
                 text = "🎉 СДАН"
             else:
                 cursor.execute(
-                    "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s,
+                    "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s",
                     (message.chat.id,)
                 )
                 text = "❌ НЕ СДАН"
@@ -519,7 +521,7 @@ async def answer(callback:CallbackQuery, state:FSMContext):
         conn.commit()
 
     if data["mode"] in ["exam", "gai"] and data["mistakes"] >= 3:
-        cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s, (callback.from_user.id,))
+        cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s", (callback.from_user.id,))
         conn.commit()
 
         await callback.message.answer("❌ Провал", reply_markup=result_kb())
