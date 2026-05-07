@@ -288,7 +288,7 @@ async def gai(callback: CallbackQuery, state: FSMContext):
             qs.append(q)
             used_q.add(q["q"])
 
-    await state.set_state(QuizState.data)
+    await state.set_state(QuizState.data) 
 
     await state.update_data(
         qs=qs,
