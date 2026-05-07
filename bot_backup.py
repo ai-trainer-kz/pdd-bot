@@ -1,8 +1,8 @@
 import json 
 import os
 import random
-import asyncio
-import sqlite3
+import asyncio 
+import psycopg2
 import time 
 
 from aiogram import Bot, Dispatcher, F
@@ -19,12 +19,9 @@ dp = Dispatcher()
 
 # ================= БАЗА =================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "db.sqlite3")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-if not os.path.exists(DB_PATH):
-    open(DB_PATH, "a").close()
-
-conn = sqlite3.connect(DB_PATH)
+conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -187,7 +184,7 @@ def generate_ai_question():
 def get_weak_questions(user_id):
     cursor.execute("""
     SELECT topic FROM mistakes 
-    WHERE user_id=? 
+    WHERE user_id=%s
     ORDER BY count DESC LIMIT 5
     """, (user_id,))
 
@@ -313,7 +310,7 @@ class QuizState(StatesGroup):
 def has_access(user_id):
 
     cursor.execute(
-        "SELECT access_until FROM users WHERE user_id=?",
+        "SELECT access_until FROM users WHERE user_id=%s,
         (user_id,)
     )
 
@@ -324,7 +321,7 @@ def has_access(user_id):
 def get_stats(user_id):
 
     cursor.execute(
-        "SELECT exams_passed, exams_failed FROM users WHERE user_id=?",
+        "SELECT exams_passed, exams_failed FROM users WHERE user_id=%s,
         (user_id,)
     )
 
@@ -372,7 +369,7 @@ async def start(message: Message, state: FSMContext):
 
     cursor.execute("""
     INSERT INTO users (user_id, username)
-    VALUES (?, ?)
+    VALUES (%s, %s)
     ON CONFLICT(user_id) DO UPDATE SET username=excluded.username
     """, (message.from_user.id, message.from_user.username))
 
@@ -393,7 +390,7 @@ async def admin_panel(message: Message):
 
     # сколько оплатили
     cursor.execute(
-        "SELECT COUNT(*) FROM users WHERE access_until > ?",
+        "SELECT COUNT(*) FROM users WHERE access_until > %s,
         (int(time.time()),)
     )
     paid_users = cursor.fetchone()[0]
@@ -466,13 +463,13 @@ async def send_question(message: Message, state: FSMContext):
         if data["mode"] in ["exam", "gai"]:
             if data["mistakes"] < 3:
                 cursor.execute(
-                    "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=?",
+                    "UPDATE users SET exams_passed=exams_passed+1 WHERE user_id=%s,
                     (message.chat.id,)
                 )
                 text = "🎉 СДАН"
             else:
                 cursor.execute(
-                    "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=?",
+                    "UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s,
                     (message.chat.id,)
                 )
                 text = "❌ НЕ СДАН"
@@ -515,14 +512,14 @@ async def answer(callback:CallbackQuery, state:FSMContext):
 
         cursor.execute("""
         INSERT INTO mistakes (user_id, topic, count)
-        VALUES (?, ?, 1)
+        VALUES (%s, %s, 1)
         ON CONFLICT(user_id, topic)
         DO UPDATE SET count = count + 1
         """, (callback.from_user.id, q.get("topic", q["q"])))
         conn.commit()
 
     if data["mode"] in ["exam", "gai"] and data["mistakes"] >= 3:
-        cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=?", (callback.from_user.id,))
+        cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s, (callback.from_user.id,))
         conn.commit()
 
         await callback.message.answer("❌ Провал", reply_markup=result_kb())
@@ -581,7 +578,7 @@ async def approve(callback:CallbackQuery):
 
     cursor.execute("""
     INSERT INTO users (user_id, access_until)
-    VALUES (?, ?)
+    VALUES (%s, %s)
     ON CONFLICT(user_id)
     DO UPDATE SET access_until=excluded.access_until
     """, (user_id, until))
