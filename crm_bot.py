@@ -70,5 +70,3 @@ CREATE TABLE IF NOT EXISTS appointments (
     client_id INTEGER
 )
 """)
-
-asyncio.run(main())
