@@ -369,16 +369,37 @@ def result_kb():
 @dp.message(Command("start"))
 async def start(message: Message, state: FSMContext):
 
-    cursor.execute("""
-    INSERT INTO users (user_id, username)
-    VALUES (?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET username=excluded.username
-    """, (message.from_user.id, message.from_user.username))
+    cursor.execute(
+        "SELECT COUNT(*) FROM users WHERE user_id=?",
+        (message.from_user.id,)
+    )
 
-    conn.commit()
+    exists = cursor.fetchone()[0]
+
+    if exists == 0:
+        cursor.execute(
+            """
+            INSERT INTO users
+            (user_id, username, access_until, exams_passed, exams_failed)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                message.from_user.id,
+                message.from_user.username,
+                0,
+                0,
+                0
+            )
+        )
+
+        conn.commit()
 
     await state.clear()
-    await message.answer("🚗 Выбери режим:", reply_markup=menu_kb())
+
+    await message.answer(
+        "🚗 Выбери режим:",
+        reply_markup=menu_kb()
+    )
 
 @dp.message(Command("admin"))
 async def admin_panel(message: Message):
