@@ -359,7 +359,7 @@ def result_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔁 Пройти ещё раз", callback_data="restart")],
         [InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")]
-    ]
+    ])
 
 # ================= START =================
 @dp.message(Command("start"))
