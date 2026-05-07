@@ -471,23 +471,23 @@ if i >= len(qs):
             text = "❌ НЕ СДАН"
     
         conn.commit()
-    
+        
         await message.answer(
             text,
             reply_markup=result_kb()
         )
-    
+        
         await state.clear()
         return
-    
+        
     # ❗ текущий вопрос
     q = qs[i]
     
     used.append(q["q"])
     
     await state.update_data(
-        used=used,
-        index=i
+    used=used,
+    index=i
     )
 # ================= ОТВЕТ =================
 
