@@ -2,7 +2,6 @@ import json
 import os
 import random
 import asyncio
-import sqlite3
 import time 
 
 from aiogram import Bot, Dispatcher, F
@@ -12,20 +11,17 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
 TOKEN = os.getenv("TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
 ADMIN_ID = 503301815
+
+import psycopg2
+
+conn = psycopg2.connect(DATABASE_URL)
+cursor = conn.cursor()
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
 # ================= БАЗА =================
-DB_PATH = "db.sqlite3"
-
-if not os.path.exists(DB_PATH):
-    open(DB_PATH, "a").close()
-
-conn = sqlite3.connect(DB_PATH)
-cursor = conn.cursor()
-
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
