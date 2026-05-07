@@ -67,5 +67,8 @@ CREATE TABLE IF NOT EXISTS masters (
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS appointments (
     id SERIAL PRIMARY KEY,
-    client_id INTEGER,
-    asyncio.run(main())
+    client_id INTEGER
+)
+""")
+
+asyncio.run(main())
