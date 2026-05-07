@@ -43,6 +43,18 @@ CREATE TABLE IF NOT EXISTS mistakes (
 
 conn.commit()
 
+cursor.execute("""
+ALTER TABLE users
+ALTER COLUMN user_id TYPE BIGINT
+""")
+
+cursor.execute("""
+ALTER TABLE mistakes
+ALTER COLUMN user_id TYPE BIGINT
+""")
+
+conn.commit()
+
 # ================= ВОПРОСЫ =================
 questions = [
 
