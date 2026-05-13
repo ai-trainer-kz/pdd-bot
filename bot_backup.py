@@ -12,7 +12,7 @@ from aiogram.fsm.state import StatesGroup, State
 
 TOKEN = os.getenv("TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
-ADMIN_ID = 503301815
+ADMIN_ID = 8398266271
 
 import psycopg2
 
