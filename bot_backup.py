@@ -17,7 +17,7 @@ try:
             "options": [q["A"], q["B"], q["C"], q["D"]],
             "correct": ["A","B","C","D"].index(q["correct"]),
             "explanation": q.get("explanation", ""),
-            "topic": q.get("question", "")
+            "topic": q.get("topic", "")
         })
 
     questions = formatted_questions
