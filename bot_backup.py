@@ -472,7 +472,9 @@ async def send_question(message: Message, state: FSMContext):
         from aiogram.types import FSInputFile
         import os
     
-        photo_path = os.path.join(os.getcwd(), q["image"])
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        photo_path = os.path.join(BASE_DIR, q["image"])
+    
         photo = FSInputFile(photo_path)
     
         await message.answer_photo(
