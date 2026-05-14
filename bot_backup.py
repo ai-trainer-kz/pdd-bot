@@ -543,7 +543,7 @@ async def send_question(message: Message, state: FSMContext):
 
     text = f"{q['q']}\n\n"
 
-    for idx, opt in enumerate(q["options"]):
+    for idx, opt in enumerate(q["options"]): 
         text += f"{chr(65+idx)}) {opt}\n"
     
     if "image" in q:
