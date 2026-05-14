@@ -12,14 +12,16 @@ try:
 
     for q in questions:
 
-        formatted_questions.append({
+       formatted_questions.append({
             "q": q["question"],
             "options": [q["A"], q["B"], q["C"], q["D"]],
             "correct": ["A","B","C","D"].index(q["correct"]),
             "explanation": q.get("explanation", ""),
             "topic": q.get("topic", "")
         })
-
+        
+        print(formatted_questions[:3])
+        
     questions = formatted_questions
     
     topics = [
@@ -164,10 +166,11 @@ async def topic_quiz(callback: CallbackQuery, state: FSMContext):
 
     topic = callback.data.replace("topic_", "")
 
-    filtered = [
-        q for q in questions
-        if q.get("topic") == topic
-    ]
+    filtered = []
+
+    for q in questions:
+        if q.get("topic", "").strip() == topic.strip():
+            filtered.append(q)
 
     if not filtered:
         await callback.answer("Нет вопросов")
