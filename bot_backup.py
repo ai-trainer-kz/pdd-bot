@@ -469,8 +469,12 @@ async def send_question(message: Message, state: FSMContext):
         text += f"{chr(65+idx)}) {opt}\n"
     
     if "image" in q:
+        from aiogram.types import FSInputFile
+    
+        photo = FSInputFile(q["image"])
+    
         await message.answer_photo(
-            photo=open(q["image"], "rb"),
+            photo=photo,
             caption=text,
             reply_markup=answers_kb()
         )
