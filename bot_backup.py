@@ -366,10 +366,14 @@ async def send_question(message: Message, state: FSMContext):
     # ❗ текущий вопрос
     q = qs[i]
 
-    text = f"{q['q']}\n\n"
-    
-    for idx, opt in enumerate(q["options"]):
-        text += f"{chr(65+idx)}) {opt}\n"
+    text = f"❓ {q['q']}\n\n"
+
+    text += (
+        f"A) {q['options'][0]}\n"
+        f"B) {q['options'][1]}\n"
+        f"C) {q['options'][2]}\n"
+        f"D) {q['options'][3]}"
+    )
     
     await message.answer(
         text,
