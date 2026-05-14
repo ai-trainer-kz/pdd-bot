@@ -118,21 +118,12 @@ def get_weak_questions(user_id):
 # ================= РЕЖИМЫ =================
 
 @dp.callback_query(F.data == "training")
-async def training(callback: CallbackQuery, state: FSMContext):
+async def training(callback: CallbackQuery):
 
-    await state.set_state(QuizState.data)
-
-    qs = random.sample(questions, min(20, len(questions)))
-
-    await state.update_data(
-        qs=qs,
-        index=0,
-        mistakes=0,
-        mode="training",
-        used=[]
+    await callback.message.answer(
+        "📚 Выберите тему:",
+        reply_markup=topics_kb()
     )
-
-    await send_question(callback.message, state)
 
 @dp.callback_query(F.data == "hard")
 async def hard(callback: CallbackQuery, state: FSMContext):
@@ -163,6 +154,38 @@ async def gai(callback: CallbackQuery, state: FSMContext):
         index=0,
         mistakes=0,
         mode="gai",
+        used=[]
+    )
+
+    await send_question(callback.message, state)
+
+@dp.callback_query(F.data.startswith("topic_"))
+async def topic_quiz(callback: CallbackQuery, state: FSMContext):
+
+    topic = callback.data.replace("topic_", "")
+
+    filtered = [
+        q for q in questions
+        if q.get("topic") == topic
+    ]
+
+    if not filtered:
+        await callback.answer("Нет вопросов")
+        return
+
+    qs = random.sample(
+        filtered,
+        min(20, len(filtered))
+    )
+
+    await state.set_state(QuizState.data)
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="training",
         used=[]
     )
 
@@ -206,6 +229,26 @@ def menu_kb():
         [InlineKeyboardButton(text="⭐ Статистика", callback_data="stats")],
         [InlineKeyboardButton(text="🔥 Топ", callback_data="top")]
     ])
+
+def topics_kb():
+    kb = InlineKeyboardMarkup(inline_keyboard=[])
+
+    for t in topics:
+        kb.inline_keyboard.append([
+            InlineKeyboardButton(
+                text=t,
+                callback_data=f"topic_{t}"
+            )
+        ])
+
+    kb.inline_keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Меню",
+            callback_data="menu"
+        )
+    ])
+
+    return kb
 
 def answers_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
