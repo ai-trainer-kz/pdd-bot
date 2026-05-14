@@ -6,7 +6,7 @@ import time
 
 try:
     with open("questions.json", "r", encoding="utf-8") as f:
-        questions = json.load(f)
+        questions = json.load(f) 
 
     formatted_questions = []
 
