@@ -60,7 +60,6 @@ questions = [
     
 {
     "q": "Что означает этот знак?",
-    "image": "signs/stop.png",
     "options": [
         "Стоянка",
         "Полная остановка",
@@ -73,7 +72,6 @@ questions = [
     
 {
     "q": "Что означает этот знак?",
-    "image": "signs/give_way.png",
     "options": [
         "Уступить дорогу",
         "Главная дорога",
@@ -86,7 +84,6 @@ questions = [
 
 {
     "q": "Что означает этот знак?",
-    "image": "signs/parking.png",
     "options": [
         "Парковка",
         "Остановка запрещена",
@@ -450,29 +447,14 @@ async def send_question(message: Message, state: FSMContext):
     q = qs[i]
 
     text = f"{q['q']}\n\n"
-
-    for idx, opt in enumerate(q["options"]): 
+    
+    for idx, opt in enumerate(q["options"]):
         text += f"{chr(65+idx)}) {opt}\n"
     
-    if "image" in q:
-        from aiogram.types import FSInputFile
-        import os
-    
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        photo_path = os.path.join(BASE_DIR, q["image"])
-    
-        photo = FSInputFile(photo_path)
-    
-        await message.answer_photo(
-            photo=photo,
-            caption=text,
-            reply_markup=answers_kb()
-        )
-    else:
-        await message.answer(
-            text,
-            reply_markup=answers_kb()
-        )
+    await message.answer(
+        text,
+        reply_markup=answers_kb()
+    )
 # ================= ОТВЕТ =================
 
 @dp.callback_query(F.data.startswith("ans_"))
