@@ -545,8 +545,8 @@ async def send_question(message: Message, state: FSMContext):
 
     for idx, opt in enumerate(q["options"]):
         text += f"{chr(65+idx)}) {opt}\n"
-
-        if "image" in q:
+    
+    if "image" in q:
         await message.answer_photo(
             photo=open(q["image"], "rb"),
             caption=text,
