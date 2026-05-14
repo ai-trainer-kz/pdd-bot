@@ -127,19 +127,6 @@ def generate_big_pool():
 
         random.shuffle(opts)
 
-        pool.append({
-            "q": text,
-            "options": opts,
-            "correct": opts.index(correct),
-            "explanation": base["explanation"],
-            "topic": base.get("topic", base["q"]),
-            "image": base.get("image")
-        })
-
-    return pool
-
-questions = base_questions
-
 # ================= РЕЖИМЫ =================
 
 @dp.callback_query(F.data == "training")
