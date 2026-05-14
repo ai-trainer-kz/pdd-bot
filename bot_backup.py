@@ -163,6 +163,21 @@ questions = [
 {"q":"Что делать при дожде?","options":["Газ","Медленно","Стоп","Ничего"],"correct":1,"explanation":"Медленно"}
 ]
 
+{
+    "q": "Что означает этот знак?",
+    "image": "signs/stop.png",
+    "options": [
+        "Стоянка",
+        "Полная остановка",
+        "Главная дорога",
+        "Парковка"
+    ],
+    "correct": 1,
+    "explanation": "Нужно полностью остановиться."
+},
+
+
+
 
 # ================= AI =================
 base_questions = questions
@@ -533,10 +548,17 @@ async def send_question(message: Message, state: FSMContext):
     for idx, opt in enumerate(q["options"]):
         text += f"{chr(65+idx)}) {opt}\n"
 
-    await message.answer(
-        text,
-        reply_markup=answers_kb()
-    )
+        if "image" in q:
+        await message.answer_photo(
+            photo=open(q["image"], "rb"),
+            caption=text,
+            reply_markup=answers_kb()
+        )
+    else:
+        await message.answer(
+            text,
+            reply_markup=answers_kb()
+        )
 # ================= ОТВЕТ =================
 
 @dp.callback_query(F.data.startswith("ans_"))
