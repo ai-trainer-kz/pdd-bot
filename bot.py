@@ -1,8 +1,32 @@
 import json 
-import os
-import random
+import os 
+import random 
 import asyncio
-import time 
+import time
+
+try:
+    with open("questions.json", "r", encoding="utf-8") as f:
+        questions = json.load(f) 
+
+    formatted_questions = []
+
+    for q in questions:
+
+        formatted_questions.append({
+            "q": q["question"],
+            "options": [q["A"], q["B"], q["C"], q["D"]],
+            "correct": ["A","B","C","D"].index(q["correct"]),
+            "explanation": q.get("explanation", ""),
+            "topic": q.get("question", "")
+        })
+
+    questions = formatted_questions
+
+    print(f"Загружено вопросов: {len(questions)}")
+
+except Exception as e:
+    print("ОШИБКА JSON:", e)
+    questions = []
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -11,8 +35,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
 TOKEN = os.getenv("TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL")
-ADMIN_ID = 503301815
+DATABASE_URL = os.getenv("DATABASE_URL") 
+ADMIN_ID = 8398266271
 
 import psycopg2
 
@@ -55,141 +79,8 @@ ALTER COLUMN user_id TYPE BIGINT
 """)
 
 conn.commit()
-# ================= ВОПРОСЫ =================
-questions = [
 
-{"q":"Какой сигнал светофора разрешает движение?","options":["Красный","Желтый","Зеленый","Мигающий красный"],"correct":2,"explanation":"Зеленый сигнал разрешает движение."},
-
-{"q":"Что означает красный сигнал светофора?","options":["Можно ехать","Нужно остановиться","Можно повернуть","Нет значения"],"correct":1,"explanation":"Красный — стоп."},
-
-{"q":"Что означает желтый сигнал?","options":["Стоп","Предупреждение","Ехать","Приоритет"],"correct":1,"explanation":"Желтый предупреждает."},
-
-{"q":"Максимальная скорость в городе?","options":["40","60","80","100"],"correct":1,"explanation":"60 км/ч"},
-
-{"q":"Максимальная скорость вне города?","options":["60","80","90","110"],"correct":2,"explanation":"90 км/ч"},
-
-{"q":"Кто имеет преимущество на перекрестке?","options":["Кто быстрее","По ПДД","Кто сигналит","Кто первый"],"correct":1,"explanation":"Приоритет по ПДД"},
-
-{"q":"Что означает знак 'Уступи дорогу'?","options":["Ехать первым","Остановиться","Уступить","Разворот"],"correct":2,"explanation":"Нужно уступить"},
-
-{"q":"Когда включать поворотник?","options":["После","Во время","Заранее","Не нужно"],"correct":2,"explanation":"Заранее"},
-
-{"q":"Можно ли обгонять на перекрестке?","options":["Да","Нет","Иногда","Можно ночью"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Что означает знак 'Стоп'?","options":["Замедлиться","Остановиться полностью","Ехать","Приоритет"],"correct":1,"explanation":"Полная остановка"},
-
-{"q":"Где запрещен обгон?","options":["На мосту","На прямой","На трассе","В городе"],"correct":0,"explanation":"На мосту запрещено"},
-
-{"q":"Кто уступает пешеходу?","options":["Пешеход","Водитель","Никто","По договоренности"],"correct":1,"explanation":"Водитель обязан уступить"},
-
-{"q":"Можно ли парковаться на переходе?","options":["Да","Нет","Иногда","Ночью можно"],"correct":1,"explanation":"Запрещено"},
-
-{"q":"Что означает сплошная линия?","options":["Можно пересекать","Нельзя пересекать","Можно обгонять","Нет значения"],"correct":1,"explanation":"Пересекать нельзя"},
-
-{"q":"Когда можно использовать дальний свет?","options":["Всегда","В городе","Вне города","Никогда"],"correct":2,"explanation":"Вне города"},
-
-{"q":"Что делать при ДТП?","options":["Уехать","Остановиться","Позвонить другу","Игнорировать"],"correct":1,"explanation":"Остановиться"},
-
-{"q":"Разрешен ли разворот на мосту?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Запрещено"},
-
-{"q":"Что означает знак 'Пешеходный переход'?","options":["Газ","Стоп","Пешеходы","Обгон"],"correct":2,"explanation":"Пешеходы"},
-
-{"q":"Когда включать аварийку?","options":["При поломке","Всегда","На трассе","Не нужно"],"correct":0,"explanation":"При аварии"},
-
-{"q":"Что делать при мигающем желтом?","options":["Стоп","Ехать осторожно","Газ","Разворот"],"correct":1,"explanation":"Осторожно"},
-
-{"q":"Можно ли ехать без ремня?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Кто главный на круге?","options":["Въезжающий","На круге","Пешеход","Никто"],"correct":1,"explanation":"Кто на круге"},
-
-{"q":"Что означает знак 'Дети'?","options":["Школа","Дети","Опасность","Газ"],"correct":1,"explanation":"Дети"},
-
-{"q":"Можно ли ехать на красный?","options":["Да","Нет","Иногда","Если никого нет"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Когда включать ближний свет?","options":["Всегда","Ночью","Днем","Не нужно"],"correct":0,"explanation":"Всегда"},
-
-{"q":"Что делать при заносе?","options":["Газ","Тормоз","Контроль","Прыжок"],"correct":2,"explanation":"Контроль"},
-
-{"q":"Что означает двойная сплошная?","options":["Можно","Нельзя","Обгон","Газ"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Можно ли стоять на остановке?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Кто уступает при повороте?","options":["Пешеход","Водитель","Никто","По договору"],"correct":1,"explanation":"Водитель уступает"},
-
-{"q":"Что означает знак 'Обгон запрещен'?","options":["Можно","Нельзя","Иногда","Газ"],"correct":1,"explanation":"Запрещен"},
-
-{"q":"Можно ли парковаться на мосту?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Запрещено"},
-
-{"q":"Что делать при тумане?","options":["Газ","Фары","Стоп","Ничего"],"correct":1,"explanation":"Фары"},
-
-{"q":"Можно ли ехать без прав?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Что означает знак 'Главная дорога'?","options":["Ты главный","Стоп","Газ","Ничего"],"correct":0,"explanation":"Главная"},
-
-{"q":"Когда уступать?","options":["Всегда","По знакам","Никогда","Иногда"],"correct":1,"explanation":"По знакам"},
-
-{"q":"Можно ли обгонять справа?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Что означает знак 'Кирпич'?","options":["Можно","Нельзя","Газ","Парковка"],"correct":1,"explanation":"Въезд запрещен"},
-
-{"q":"Можно ли ехать по тротуару?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Что делать при поломке?","options":["Ехать","Стоп","Аварийка","Газ"],"correct":2,"explanation":"Аварийка"},
-
-{"q":"Можно ли ехать задним ходом на трассе?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Что означает знак 'Ограничение скорости'?","options":["Газ","Лимит","Стоп","Ничего"],"correct":1,"explanation":"Ограничение"},
-
-{"q":"Можно ли ехать по встречке?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Что делать при гололеде?","options":["Газ","Медленно","Стоп","Ничего"],"correct":1,"explanation":"Медленно"},
-
-{"q":"Когда уступать автобусу?","options":["Всегда","Никогда","Иногда","По настроению"],"correct":0,"explanation":"Всегда"},
-
-{"q":"Можно ли ехать без света?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Что означает знак 'ЖД переезд'?","options":["Поезд","Газ","Стоп","Ничего"],"correct":0,"explanation":"Переезд"},
-
-{"q":"Можно ли сигналить в городе?","options":["Да","Нет","Иногда","При опасности"],"correct":3,"explanation":"Только при опасности"},
-
-{"q":"Что делать при пробке?","options":["Газ","Ждать","Разворот","Обгон"],"correct":1,"explanation":"Ждать"},
-
-{"q":"Можно ли ехать на красный при повороте?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Что означает знак 'Парковка'?","options":["Стоянка","Газ","Стоп","Ничего"],"correct":0,"explanation":"Стоянка разрешена"},
-
-{"q":"Можно ли парковаться на перекрестке?","options":["Да","Нет","Иногда","Ночью"],"correct":1,"explanation":"Нельзя"},
-
-{"q":"Что делать при дожде?","options":["Газ","Медленно","Стоп","Ничего"],"correct":1,"explanation":"Медленно"}
-]
-
-
-# ================= AI =================
-base_questions = questions
-
-def generate_ai_question():
-    # берём нормальный вопрос из базы
-    q = random.choice(questions)
-
-    # копируем
-    new_q = {
-        "q": q["q"],
-        "options": q["options"][:],
-        "correct": q["correct"],
-        "explanation": q.get("explanation", ""),
-        "topic": q.get("topic", q["q"])
-    }
-
-    # перемешиваем ответы (как экзамен)
-    opts = new_q["options"]
-    correct_text = opts[new_q["correct"]]
-
-    random.shuffle(opts)
-
-    new_q["options"] = opts
-    new_q["correct"] = opts.index(correct_text)
-
-    return new_q
+# ================= AI ================
     
 def get_weak_questions(user_id):
     cursor.execute("""
@@ -204,36 +95,6 @@ def get_weak_questions(user_id):
 
     return weak
 
-
-# === УЛУЧШАЕМ POOL ===
-
-def generate_big_pool():
-    pool = []
-
-    for i in range(1000):  # 🔥 больше
-        base = random.choice(base_questions)
-
-        text = base["q"] + f" ({i})"
-
-        opts = base["options"][:]
-        correct = opts[base["correct"]]
-
-        random.shuffle(opts)
-
-        pool.append({
-            "q": text,
-            "options": opts,
-            "correct": opts.index(correct),
-            "explanation": base["explanation"],
-            "topic": base.get("topic", base["q"])
-        })
-
-    return pool
-
-
-questions = base_questions + generate_big_pool()
-
-
 # ================= РЕЖИМЫ =================
 
 @dp.callback_query(F.data == "training")
@@ -241,76 +102,52 @@ async def training(callback: CallbackQuery, state: FSMContext):
 
     await state.set_state(QuizState.data)
 
-    qs = random.sample(questions * 2, 20)
+    qs = random.sample(questions, min(20, len(questions)))
+
     await state.update_data(
         qs=qs,
         index=0,
-        score=0,
         mistakes=0,
         mode="training",
-        used=[],
-        last_q=None
+        used=[]
     )
 
     await send_question(callback.message, state)
-
 
 @dp.callback_query(F.data == "hard")
 async def hard(callback: CallbackQuery, state: FSMContext):
 
-    weak = get_weak_questions(callback.from_user.id)
-
-    if weak:
-        qs = weak * 3
-        random.shuffle(qs)
-    else:
-        qs = [generate_ai_question() for _ in range(15)]
-
     await state.set_state(QuizState.data)
+
+    qs = random.sample(questions, min(20, len(questions)))
 
     await state.update_data(
         qs=qs,
         index=0,
-        score=0,
         mistakes=0,
-        mode="training",
-        used=[],
-        last_q=None
+        mode="hard",
+        used=[]
     )
 
     await send_question(callback.message, state)
-
 
 @dp.callback_query(F.data == "gai")
 async def gai(callback: CallbackQuery, state: FSMContext):
 
-    if not has_access(callback.from_user.id):
-        await callback.message.answer("🔒 Только после оплаты", reply_markup=pay_kb())
-        return
-
-    qs = random.sample(questions, min(30, len(questions)))
-
-    used_q = {q["q"] for q in qs}
-
-    while len(qs) < 30:
-        q = generate_ai_question()
-        if q["q"] not in used_q:
-            qs.append(q)
-            used_q.add(q["q"])
-
     await state.set_state(QuizState.data)
+
+    qs = random.sample(questions, min(20, len(questions)))
 
     await state.update_data(
         qs=qs,
         index=0,
-        score=0,
         mistakes=0,
         mode="gai",
-        used=[],
-        last_q=None
+        used=[]
     )
 
     await send_question(callback.message, state)
+
 # ================= STATE =================
 
 class QuizState(StatesGroup):
@@ -431,8 +268,10 @@ async def admin_panel(message: Message):
     )
 
     await message.answer(text)
+
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
+
     if not has_access(callback.from_user.id):
         await callback.message.answer(
             "🔒 Экзамен доступен только после оплаты",
@@ -440,19 +279,9 @@ async def exam(callback: CallbackQuery, state: FSMContext):
         )
         return
 
-    # 🔥 перемешиваем и убираем повторы
-    qs = random.sample(questions * 5, min(20, len(questions * 5)))
-
-    # если мало — добавляем AI
-    used_q = {q["q"] for q in qs}
-
-    while len(qs) < 20:
-        q = generate_ai_question()
-        if q["q"] not in used_q:
-            qs.append(q)
-            used_q.add(q["q"])
-
     await state.set_state(QuizState.data)
+
+    qs = random.sample(questions, min(20, len(questions)))
 
     await state.update_data(
         qs=qs,
@@ -473,11 +302,7 @@ async def send_question(message: Message, state: FSMContext):
     i = data["index"]
 
     used = data.get("used", [])
-
-    # 🔥 анти-дубликаты
-    while i < len(qs) and qs[i]["q"] in used:
-        i += 1
-
+    
     # 🔥 конец вопросов
     if i >= len(qs):
 
@@ -521,57 +346,60 @@ async def send_question(message: Message, state: FSMContext):
     # ❗ текущий вопрос
     q = qs[i]
 
-    used.append(q["q"])
-
-    await state.update_data(
-        used=used,
-        index=i
-    )
-
     text = f"{q['q']}\n\n"
-
+    
     for idx, opt in enumerate(q["options"]):
         text += f"{chr(65+idx)}) {opt}\n"
-
+    
     await message.answer(
         text,
         reply_markup=answers_kb()
     )
 # ================= ОТВЕТ =================
-
 @dp.callback_query(F.data.startswith("ans_"))
-async def answer(callback:CallbackQuery, state:FSMContext):
+async def answer(callback: CallbackQuery, state: FSMContext):
+
     data = await state.get_data()
+
     qs = data["qs"]
     i = data["index"]
 
     q = qs[i]
-    user = int(callback.data.split("_")[1])
 
-    if user == q["correct"]:
-        data["score"] += 1
+    selected = int(callback.data.split("_")[1])
+
+    if selected == q["correct"]:
+
         await callback.message.answer("✅ Верно")
+
+        score = data.get("score", 0) + 1
+
+        await state.update_data(score=score)
+
     else:
-        data["mistakes"] += 1
+
         await callback.message.answer("❌ Неверно")
 
-        cursor.execute("""
-            INSERT INTO mistakes (user_id, topic, count)
-            VALUES (%s, %s, 1)
-            ON CONFLICT (user_id, topic)
-            DO UPDATE SET count = mistakes.count + 1
-         """, (callback.from_user.id, q.get("topic", q["q"])))
-        conn.commit()
+        mistakes = data.get("mistakes", 0) + 1
 
-    if data["mode"] in ["exam", "gai"] and data["mistakes"] >= 3:
-        cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s", (callback.from_user.id,))
-        conn.commit()
+        await state.update_data(mistakes=mistakes)
 
-        await callback.message.answer("❌ Провал", reply_markup=result_kb())
+    i += 1
+
+    await state.update_data(index=i)
+
+    if i >= len(qs):
+
+        score = data.get("score", 0)
+
+        await callback.message.answer(
+            f"🏁 Тест завершён\n\n✅ Правильных: {score}\n❌ Ошибок: {data.get('mistakes', 0)}"
+        )
+
         await state.clear()
+
         return
 
-    await state.update_data(index=i+1, score=data["score"], mistakes=data["mistakes"])
     await send_question(callback.message, state)
 
 # ================= ОБЪЯСНЕНИЕ =================
