@@ -103,28 +103,24 @@ questions = [
 base_questions = questions
 
 def generate_ai_question():
-    # берём нормальный вопрос из базы
-    q = random.choice(questions)
 
-    # копируем
-    new_q = {
-        "q": q["q"],
-        "options": q["options"][:],
-        "correct": q["correct"],
-        "explanation": q.get("explanation", ""),
-        "topic": q.get("topic", q["q"])
-    }
+    base = random.choice(base_questions)
 
-    # перемешиваем ответы (как экзамен)
-    opts = new_q["options"]
-    correct_text = opts[new_q["correct"]]
+    text = base["q"] + f" ({random.randint(1,9999)})"
+
+    opts = base["options"][:]
+    correct_text = opts[base["correct"]]
 
     random.shuffle(opts)
 
-    new_q["options"] = opts
-    new_q["correct"] = opts.index(correct_text)
-
-    return new_q
+    return {
+        "q": text,
+        "options": opts,
+        "correct": opts.index(correct_text),
+        "explanation": base.get("explanation", ""),
+        "topic": base.get("topic", base["q"]),
+        "image": base.get("image")
+    }
     
 def get_weak_questions(user_id):
     cursor.execute("""
@@ -160,7 +156,8 @@ def generate_big_pool():
             "options": opts,
             "correct": opts.index(correct),
             "explanation": base["explanation"],
-            "topic": base.get("topic", base["q"])
+            "topic": base.get("topic", base["q"]),
+            "image": base.get("image")
         })
 
     return pool
@@ -408,11 +405,7 @@ async def send_question(message: Message, state: FSMContext):
     i = data["index"]
 
     used = data.get("used", [])
-
-    # 🔥 анти-дубликаты
-    while i < len(qs) and qs[i]["q"] in used:
-        i += 1
-
+    
     # 🔥 конец вопросов
     if i >= len(qs):
 
@@ -455,13 +448,6 @@ async def send_question(message: Message, state: FSMContext):
 
     # ❗ текущий вопрос
     q = qs[i]
-
-    used.append(q["q"])
-
-    await state.update_data(
-        used=used,
-        index=i
-    )
 
     text = f"{q['q']}\n\n"
 
