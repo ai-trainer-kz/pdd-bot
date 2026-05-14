@@ -388,40 +388,50 @@ async def send_question(message: Message, state: FSMContext):
         reply_markup=answers_kb()
     )
 # ================= ОТВЕТ =================
-
 @dp.callback_query(F.data.startswith("ans_"))
-async def answer(callback:CallbackQuery, state:FSMContext):
+async def answer(callback: CallbackQuery, state: FSMContext):
+
     data = await state.get_data()
+
     qs = data["qs"]
     i = data["index"]
 
     q = qs[i]
-    user = int(callback.data.split("_")[1])
 
-    if user == q["correct"]:
-        data["score"] += 1
+    selected = int(callback.data.split("_")[1])
+
+    if selected == q["correct"]:
+
         await callback.message.answer("✅ Верно")
+
+        score = data.get("score", 0) + 1
+
+        await state.update_data(score=score)
+
     else:
-        data["mistakes"] += 1
+
         await callback.message.answer("❌ Неверно")
 
-        cursor.execute("""
-            INSERT INTO mistakes (user_id, topic, count)
-            VALUES (%s, %s, 1)
-            ON CONFLICT (user_id, topic)
-            DO UPDATE SET count = mistakes.count + 1
-         """, (callback.from_user.id, q.get("topic", q["q"])))
-        conn.commit()
+        mistakes = data.get("mistakes", 0) + 1
 
-    if data["mode"] in ["exam", "gai"] and data["mistakes"] >= 3:
-        cursor.execute("UPDATE users SET exams_failed=exams_failed+1 WHERE user_id=%s", (callback.from_user.id,))
-        conn.commit()
+        await state.update_data(mistakes=mistakes)
 
-        await callback.message.answer("❌ Провал", reply_markup=result_kb())
+    i += 1
+
+    await state.update_data(index=i)
+
+    if i >= len(qs):
+
+        score = data.get("score", 0)
+
+        await callback.message.answer(
+            f"🏁 Тест завершён\n\n✅ Правильных: {score}\n❌ Ошибок: {data.get('mistakes', 0)}"
+        )
+
         await state.clear()
+
         return
 
-    await state.update_data(index=i+1, score=data["score"], mistakes=data["mistakes"])
     await send_question(callback.message, state)
 
 # ================= ОБЪЯСНЕНИЕ =================
