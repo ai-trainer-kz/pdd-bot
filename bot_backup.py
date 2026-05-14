@@ -96,28 +96,7 @@ questions = [
 
 ]
     
-# ================= AI =================
-base_questions = questions
-
-def generate_ai_question():
-
-    base = random.choice(base_questions)
-
-    text = base["q"] + f" ({random.randint(1,9999)})"
-
-    opts = base["options"][:]
-    correct_text = opts[base["correct"]]
-
-    random.shuffle(opts)
-
-    return {
-        "q": text,
-        "options": opts,
-        "correct": opts.index(correct_text),
-        "explanation": base.get("explanation", ""),
-        "topic": base.get("topic", base["q"]),
-        "image": base.get("image")
-    }
+# ================= AI ================
     
 def get_weak_questions(user_id):
     cursor.execute("""
@@ -191,7 +170,7 @@ async def hard(callback: CallbackQuery, state: FSMContext):
         qs = weak * 3
         random.shuffle(qs)
     else:
-        qs = [generate_ai_question() for _ in range(15)]
+        qs = random.sample(questions, min(15, len(questions)))
 
     await state.set_state(QuizState.data)
 
