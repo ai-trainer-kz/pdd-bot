@@ -134,76 +134,52 @@ async def training(callback: CallbackQuery, state: FSMContext):
 
     await state.set_state(QuizState.data)
 
-    qs = random.sample(questions * 2, 20)
+    qs = random.sample(questions, min(20, len(questions)))
+
     await state.update_data(
         qs=qs,
         index=0,
-        score=0,
         mistakes=0,
         mode="training",
-        used=[],
-        last_q=None
+        used=[]
     )
 
     await send_question(callback.message, state)
-
 
 @dp.callback_query(F.data == "hard")
 async def hard(callback: CallbackQuery, state: FSMContext):
 
-    weak = get_weak_questions(callback.from_user.id)
-
-    if weak:
-        qs = weak * 3
-        random.shuffle(qs)
-    else:
-        qs = random.sample(questions, min(15, len(questions)))
-
     await state.set_state(QuizState.data)
+
+    qs = random.sample(questions, min(20, len(questions)))
 
     await state.update_data(
         qs=qs,
         index=0,
-        score=0,
         mistakes=0,
-        mode="training",
-        used=[],
-        last_q=None
+        mode="hard",
+        used=[]
     )
 
     await send_question(callback.message, state)
-
 
 @dp.callback_query(F.data == "gai")
 async def gai(callback: CallbackQuery, state: FSMContext):
 
-    if not has_access(callback.from_user.id):
-        await callback.message.answer("🔒 Только после оплаты", reply_markup=pay_kb())
-        return
-
-    qs = random.sample(questions, min(30, len(questions)))
-
-    used_q = {q["q"] for q in qs}
-
-    while len(qs) < 30:
-        q = generate_ai_question()
-        if q["q"] not in used_q:
-            qs.append(q)
-            used_q.add(q["q"])
-
     await state.set_state(QuizState.data)
+
+    qs = random.sample(questions, min(20, len(questions)))
 
     await state.update_data(
         qs=qs,
         index=0,
-        score=0,
         mistakes=0,
         mode="gai",
-        used=[],
-        last_q=None
+        used=[]
     )
 
     await send_question(callback.message, state)
+
 # ================= STATE =================
 
 class QuizState(StatesGroup):
@@ -324,8 +300,10 @@ async def admin_panel(message: Message):
     )
 
     await message.answer(text)
+
 @dp.callback_query(F.data == "exam")
 async def exam(callback: CallbackQuery, state: FSMContext):
+
     if not has_access(callback.from_user.id):
         await callback.message.answer(
             "🔒 Экзамен доступен только после оплаты",
@@ -333,19 +311,9 @@ async def exam(callback: CallbackQuery, state: FSMContext):
         )
         return
 
-    # 🔥 перемешиваем и убираем повторы
-    qs = random.sample(questions * 5, min(20, len(questions * 5)))
-
-    # если мало — добавляем AI
-    used_q = {q["q"] for q in qs}
-
-    while len(qs) < 20:
-        q = generate_ai_question()
-        if q["q"] not in used_q:
-            qs.append(q)
-            used_q.add(q["q"])
-
     await state.set_state(QuizState.data)
+
+    qs = random.sample(questions, min(20, len(questions)))
 
     await state.update_data(
         qs=qs,
