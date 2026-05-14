@@ -138,7 +138,7 @@ def get_weak_questions(user_id):
 def generate_big_pool():
     pool = []
 
-    for i in range(1000):  # 🔥 больше
+    for i in range(50):  # 🔥 больше
         base = random.choice(base_questions)
 
         text = base["q"] + f" ({i})"
@@ -159,9 +159,7 @@ def generate_big_pool():
 
     return pool
 
-
-questions = base_questions + generate_big_pool()
-
+questions = base_questions
 
 # ================= РЕЖИМЫ =================
 
