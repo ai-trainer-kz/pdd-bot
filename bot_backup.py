@@ -2,7 +2,10 @@ import json
 import os
 import random 
 import asyncio
-import time 
+import time
+
+with open("questions.json", "r", encoding="utf-8") as f:
+    questions = json.load(f)
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
