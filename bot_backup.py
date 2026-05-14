@@ -10,17 +10,17 @@ try:
 
     formatted_questions = []
 
-for q in questions:
+    for q in questions:
 
-    formatted_questions.append({
-        "q": q["question"],
-        "options": [q["A"], q["B"], q["C"], q["D"]],
-        "correct": ["A","B","C","D"].index(q["correct"]),
-        "explanation": q.get("explanation", ""),
-        "topic": q.get("question", "")
-    })
+        formatted_questions.append({
+            "q": q["question"],
+            "options": [q["A"], q["B"], q["C"], q["D"]],
+            "correct": ["A","B","C","D"].index(q["correct"]),
+            "explanation": q.get("explanation", ""),
+            "topic": q.get("question", "")
+        })
 
-questions = formatted_questions
+    questions = formatted_questions
 
     print(f"Загружено вопросов: {len(questions)}")
 
