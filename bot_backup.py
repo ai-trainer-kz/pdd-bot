@@ -499,5 +499,80 @@ async def main():
     print("STARTED")
     await dp.start_polling(bot)
 
+@dp.callback_query(F.data == "training")
+async def training(callback: CallbackQuery, state: FSMContext):
+
+    qs = random.sample(questions, min(20, len(questions)))
+
+    await state.set_state(QuizState.data)
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="training",
+        used=[]
+    )
+
+    await send_question(callback.message, state)
+
+
+@dp.callback_query(F.data == "hard")
+async def hard(callback: CallbackQuery, state: FSMContext):
+
+    qs = random.sample(questions, min(20, len(questions)))
+
+    await state.set_state(QuizState.data)
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="hard",
+        used=[]
+    )
+
+    await send_question(callback.message, state)
+
+
+@dp.callback_query(F.data == "gai")
+async def gai(callback: CallbackQuery, state: FSMContext):
+
+    qs = random.sample(questions, min(20, len(questions)))
+
+    await state.set_state(QuizState.data)
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="gai",
+        used=[]
+    )
+
+    await send_question(callback.message, state)
+
+
+@dp.callback_query(F.data == "exam")
+async def exam(callback: CallbackQuery, state: FSMContext):
+
+    qs = random.sample(questions, min(20, len(questions)))
+
+    await state.set_state(QuizState.data)
+
+    await state.update_data(
+        qs=qs,
+        index=0,
+        score=0,
+        mistakes=0,
+        mode="exam",
+        used=[]
+    )
+
+    await send_question(callback.message, state)
+
 if __name__ == "__main__":
     asyncio.run(main())
