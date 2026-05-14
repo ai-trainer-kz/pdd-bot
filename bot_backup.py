@@ -8,6 +8,20 @@ try:
     with open("questions.json", "r", encoding="utf-8") as f:
         questions = json.load(f)
 
+    formatted_questions = []
+
+for q in questions:
+
+    formatted_questions.append({
+        "q": q["question"],
+        "options": [q["A"], q["B"], q["C"], q["D"]],
+        "correct": ["A","B","C","D"].index(q["correct"]),
+        "explanation": q.get("explanation", ""),
+        "topic": q.get("question", "")
+    })
+
+questions = formatted_questions
+
     print(f"Загружено вопросов: {len(questions)}")
 
 except Exception as e:
@@ -80,22 +94,6 @@ def get_weak_questions(user_id):
     weak = [q for q in questions if q.get("topic", q["q"]) in topics]
 
     return weak
-
-
-# === УЛУЧШАЕМ POOL ===
-
-def generate_big_pool():
-    pool = []
-
-    for i in range(50):  # 🔥 больше
-        base = random.choice(base_questions)
-
-        text = base["q"] + f" ({i})"
-
-        opts = base["options"][:]
-        correct = opts[base["correct"]]
-
-        random.shuffle(opts)
 
 # ================= РЕЖИМЫ =================
 
