@@ -4,10 +4,15 @@ import random
 import asyncio
 import time
 
-with open("questions.json", "r", encoding="utf-8") as f:
-    questions = json.load(f)
-    
-print(f"Загружено вопросов: {len(questions)}")
+try:
+    with open("questions.json", "r", encoding="utf-8") as f:
+        questions = json.load(f)
+
+    print(f"Загружено вопросов: {len(questions)}")
+
+except Exception as e:
+    print("ОШИБКА JSON:", e)
+    questions = []
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
