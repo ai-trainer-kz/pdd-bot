@@ -470,8 +470,10 @@ async def send_question(message: Message, state: FSMContext):
     
     if "image" in q:
         from aiogram.types import FSInputFile
+        import os
     
-        photo = FSInputFile(q["image"])
+        photo_path = os.path.join(os.getcwd(), q["image"])
+        photo = FSInputFile(photo_path)
     
         await message.answer_photo(
             photo=photo,
