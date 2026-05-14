@@ -199,7 +199,9 @@ questions = [
     ],
     "correct": 0,
     "explanation": "Разрешена парковка."
-}    
+}
+
+]
     
 # ================= AI =================
 base_questions = questions
