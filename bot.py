@@ -117,6 +117,13 @@ async def training(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "hard")
 async def hard(callback: CallbackQuery, state: FSMContext):
 
+    if not has_access(callback.from_user.id):
+        await callback.message.answer(
+            "🔒 Сложные темы доступны только после оплаты",
+            reply_markup=pay_kb()
+        )
+        return
+
     await state.set_state(QuizState.data)
 
     qs = random.sample(questions, min(20, len(questions)))
@@ -133,6 +140,13 @@ async def hard(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "gai")
 async def gai(callback: CallbackQuery, state: FSMContext):
+
+    if not has_access(callback.from_user.id):
+        await callback.message.answer(
+            "🔒 ГАИ режим доступен только после оплаты",
+            reply_markup=pay_kb()
+        )
+        return
 
     await state.set_state(QuizState.data)
 
