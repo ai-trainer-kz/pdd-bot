@@ -255,7 +255,12 @@ async def start(message: Message, state: FSMContext):
     await state.clear()
 
     await message.answer(
-        "🚗 Выбери режим:",
+        "🚗 Выбери режим:\n\n"
+        "📘 Тренировка — бесплатно\n\n"
+        "🔒 PRO режимы:\n"
+        "🧠 Сложные темы\n"
+        "🎯 ГАИ режим\n"
+        "📝 Экзамен",
         reply_markup=menu_kb()
     )
 
