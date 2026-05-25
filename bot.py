@@ -85,7 +85,7 @@ conn.commit()
 def get_weak_questions(user_id):
     cursor.execute("""
     SELECT topic FROM mistakes 
-    WHERE user_id=? 
+    WHERE user_id=%s 
     ORDER BY count DESC LIMIT 5
     """, (user_id,))
 
